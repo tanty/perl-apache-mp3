@@ -163,7 +163,11 @@ sub help_screen {
 								  . $self->html_content_type
 								 }
 								),
-				   -script => $JSCRIPT,
+				   -script =>[ {-language => 'JavaScript',
+								-code => $JSCRIPT},
+							   {-language => 'JavaScript',
+								-src => $self->r->dir_config('BaseDir').'/functions.js'}
+							 ],
 				  );
 
   my $help_img_url = $self->help_img_url;  # URL for the image
@@ -359,7 +363,11 @@ sub process_search {
 									-content    => 'text/html; charset='
 									. $self->html_content_type
 								   }),
-					 -script => $JSCRIPT,
+					 -script =>[ {-language => 'JavaScript',
+								  -code => $JSCRIPT},
+								 {-language => 'JavaScript',
+								  -src => $self->r->dir_config('BaseDir').'/functions.js'}
+							   ],
 					);
 
 	$self->page_top($dir);
@@ -643,15 +651,19 @@ sub page_top {
   my $dir  = shift;
   my $title = $self->r->uri;
   print start_html(
-    -title => $title,
-    -head => meta({-http_equiv => 'Content-Type',
-                   -content    => 'text/html; charset='
+				   -title => $title,
+				   -head => meta({-http_equiv => 'Content-Type',
+								  -content    => 'text/html; charset='
                                   . $self->html_content_type
-                  }),
-    -lang  => $self->lh->language_tag,
-    -dir => $self->lh->direction,
-    -style => {-src=>$self->stylesheet},
-	-script => $JSCRIPT,
+								 }),
+				   -lang  => $self->lh->language_tag,
+				   -dir => $self->lh->direction,
+				   -style => {-src=>$self->stylesheet},
+				   -script =>[ {-language => 'JavaScript',
+								-code => $JSCRIPT},
+							   {-language => 'JavaScript',
+								-src => $self->r->dir_config('BaseDir').'/functions.js'}
+							 ],
   );
 }
 
@@ -1164,9 +1176,18 @@ sub mp3_list {
   my @f = $self->sort_mp3s($mp3s);
   my $count = 0;
   for my $song (@f) {
-    my $highlight = $count++ % 2 ? 'highlight' : 'normal';
+    my $highlight = $count % 2 ? 'highlight' : 'normal';
+	my $rowcolor  = $count % 2 ? '#EEEEEE' : '#FFFFFF';
     my $contents   = $self->format_song($song,$mp3s->{$song},$count,$mode);
-    print TR({-class=>$highlight},td($contents)), "\n";
+    print TR({
+			  -class       => $highlight,
+			  -onMouseOver => "setPointer(this, $count, 'over' , '$rowcolor', '#CCFFCC', '#FFCC99');",
+			  -onMouseOut  => "setPointer(this, $count, 'out'  , '$rowcolor', '#CCFFCC', '#FFCC99');" ,
+			  -onMouseDown => "setPointer(this, $count, 'click', '$rowcolor', '#CCFFCC', '#FFCC99');",
+
+			 },td($contents)), "\n";
+
+	$count++;
   }
 }
 
