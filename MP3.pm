@@ -15,8 +15,9 @@ use IO::File;
 use Socket 'sockaddr_in';
 use CGI qw/:standard *table *td *TR *blockquote *center center *h1/;
 use CGI::Carp 'fatalsToBrowser';
+use MP3::Icecast;
 
-use File::Basename 'dirname','basename';
+use File::Basename 'dirname','basename','fileparse';
 use File::Path;
 use vars qw($VERSION %SEARCH);
 
@@ -85,7 +86,7 @@ sub new {
   my $class = shift;
   my $r = shift if @_ == 1;
   my $self = bless {@_}, ref($class) || $class;
-  $self->{'r'} ||= $r if $r;
+  $self->{r}   ||= $r if $r;
 
   my @lang_tags;
   push @lang_tags,split /,\s+/,$r->header_in('Accept-language')
@@ -133,7 +134,7 @@ sub x {  # maketext plus maybe escape.  The "x" for "xlate"
 }
 
 sub lh { return shift->{lh} }  # language handle
- 
+
 sub aright { -align => shift->{lh}->right }
 # align "right" (or, in case of Arabic (etc), really left).
 
@@ -141,6 +142,8 @@ sub aleft  { -align => shift->{lh}->left  }
 # align "light" (or, in case of Arabic (etc), really right).
 
 sub r { return shift->{r} }
+
+sub icy { return shift->{icy} }
 
 sub html_content_type {
   my $self = shift;
@@ -208,6 +211,21 @@ sub help_figure_list {
 sub run {
   my $self = shift;
   my $r = $self->r;
+  $self->{icy} ||= MP3::Icecast->new();
+  my $icy = $self->icy;
+
+
+  my(undef,$uribase)  = fileparse($r->uri);
+  my(undef,$filebase) = fileparse($r->filename);
+
+  $icy->alias( $filebase => $uribase );
+  $icy->clear_files();
+
+  my $local = $self->playlocal_ok && $self->is_local;
+  my $base = $self->stream_base;
+
+  $icy->prefix( $local ? undef : $base);
+  $icy->postfix($local ? undef : '?'.$self->stream_parms);
 
   local $CGI::XHTML = 0;
 
@@ -237,71 +255,83 @@ sub run {
   return $self->download_file($r->filename) unless param;
 
   # this is called to stream a file
-  return $self->stream if param('stream');
+  if(param('stream')){
+    return $self->stream;
+  }
 
   # this is called to generate a playlist on the current directory
-  return $self->send_playlist($self->find_mp3s)
-    if param('Play All');
+  if(param('Play All')){
+    $icy->add_directory($filebase);
+    return $self->send_playlist;
+  }
 
   # this is called to generate a playlist on the current directory
   # and everything beneath
-  return $self->send_playlist($self->find_mp3s('recursive')) 
-    if param('Play All Recursive') ;
+  if(param('Play All Recursive')){
+    $icy->recursive(1);
+    $icy->add_directory($filebase);
+    return $self->send_playlist;
+  }
 
   # this is called to generate a shuffled playlist of current directory
-  return $self->send_playlist($self->find_mp3s,'shuffle')
-    if param('Shuffle');
-
-  # this is called to generate a shuffled playlist of current directory
-  return $self->send_playlist($self->find_mp3s,'shuffle')
-    if param('Shuffle All');
+  if(param('Shuffle') or param('Shuffle All')){
+    $icy->shuffle(1);
+    $icy->add_directory($filebase);
+    return $self->send_playlist;
+  }
 
   # this is called to generate a shuffled playlist of current directory
   # and everything beneath
-  return $self->send_playlist($self->find_mp3s('recursive'),'shuffle')
-    if param('Shuffle All Recursive');
+  if(param('Shuffle All Recursive')){
+    $icy->recursive(1);
+    $icy->shuffle(1);
+    $icy->add_directory($filebase);
+    return $self->send_playlist;
+  }
 
   # this is called to generate a playlist for one file
   if (param('play')) {
+
     my $dot3 = '.m3u|.pls';
     my($basename,$ext) = $r->uri =~ m!([^/]+?)($dot3)?$!;
     $basename = quotemeta($basename);
     my @matches;
     if (-e $self->r->filename) {
-      # If the actual .m3u file exists (it's a playlist), then we read it
-      # to get the list of files to send
-      @matches = $self->load_playlist($self->r->filename);
+      my $fh = IO::File->new($self->r->filename)
+        or (warn "couldn't open ".$self->r->filename and return 404);
+      while(<$fh>) {
+        chomp;
+        s/\#.*//;         # get rid of comment and hint lines
+        s/\s+$//;         # get rid of whitespace at end of lines
+        next unless $_;
+
+        $icy->add_file("$filebase$_");
+      }
+      $fh->close;
+
     } else {
-      # find the MP3 file that corresponds to basename.m3u
-      @matches = grep { m!/$basename[^/]*$! } @{$self->find_mp3s};
-    }
-    if($r->request($r->uri)->content_type eq 'audio/x-scpls'){
-      open(FILE,$r->filename) || return 404;
-      $r->send_fd(\*FILE);
-      close(FILE);
-    } else {
-      $self->send_playlist(\@matches);
+      opendir(D,$filebase) || return 404;
+      $icy->add_file("$filebase$_") foreach grep { m!$basename[^/]*$! } readdir(D);
+      closedir(D);
     }
 
+    $self->send_playlist();
     return OK;
   }
 
-  # this is called to generate a playlist for selected files
+  # these are called to generate playlists for selected files
   if (param('Play Selected')) {
     return HTTP_NO_CONTENT unless my @files = param('file');
-    my $uri = dirname($r->uri);
-    $uri =~ s!/?search/?!/!;
-    $self->send_playlist([map { "$uri/$_" } @files]);
+    $icy->add_file("$filebase/$_") foreach @files;
+    $self->send_playlist();
     return OK;
   }
 
   if (param('Shuffle Selected')) {
     return HTTP_NO_CONTENT unless my @files = param('file');
-    my $uri = dirname($r->uri);
-    $uri =~ s!/?search/?!/!;
-	my $list = [map {"$uri/$_"} @files];
-	$self->shuffle($list);
-    $self->send_playlist($list);
+    $icy->shuffle(1);
+    $icy->add_file("$filebase/$_") foreach @files;
+    $self->send_playlist();
     return OK;
   }
 
@@ -400,7 +430,7 @@ sub process_search {
             $self->list_subdirs($directories);
             print "\n<!-- end subdirs -->\n";
         }
-        
+
 	$self->list_mp3s( $RESULTS ,'search');
 	$self->directory_bottom($dir);
 	print "\n", end_html();
@@ -436,9 +466,11 @@ sub download_file {
   my $is_audio = $self->supported_type ($self->r->content_type);
 
   if ($is_audio && !$self->download_ok) {
+
     $self->r->log_reason('File downloading is forbidden');
     return FORBIDDEN;
   } else {
+
     return DECLINED;  # allow Apache to do its standard thing
   }
 
@@ -462,14 +494,16 @@ sub stream {
     return FORBIDDEN;
   }
 
-  return $self->send_stream($r->filename,$r->uri);
+  my $icy = MP3::Icecast->new;
+  $icy->stream($r->filename,0,$r);
+  return OK;
 }
 
 # this generates a playlist for the MP3 player
 sub send_playlist {
   my $self = shift;
   my ($urls,$shuffle) = @_;
-  return HTTP_NO_CONTENT unless @$urls;
+  return HTTP_NO_CONTENT unless $self->icy->files;
   my $r = $self->r;
   my $base = $self->stream_base;
 
@@ -479,102 +513,15 @@ sub send_playlist {
   # local user
   my $local = $self->playlocal_ok && $self->is_local;
 
-  # The extended format is:
-  #	#EXTM3U
-  #	#EXTINF:seconds,title - artist (album)
-  #	URL
-  # but apparently you can override with this
-  #	#EXTART:Britney Spears
-  #	#EXTALB:Oops!.. I Did It Again
-  #	#EXTTIT:Something or other
-  # and there doesn't seem to be a way to escape the -, so that's safer
-  # in theory, but if you send both it seems to ignore all but the EXTINF
-  # and there's no way to send seconds without it anyway, so we'll just do
-  # that.
-  #
-  # .... except that the second format breaks older versions of winamp
-  # so we'll use EXTINF only!
+  my $m3u = $self->icy->m3u;
+  $r->print($m3u);
 
-  $self->shuffle($urls) if $shuffle;
-  $r->print("#EXTM3U$CRLF");
-  my $stream_parms = $self->stream_parms;
-  foreach (@$urls) {
-    $self->path_escape(\$_);
-    my $subr = $r->lookup_uri($_) or next;
-    my $file = $subr->filename;
-    my $type = $subr->content_type;
-    my $data = $self->fetch_info($file,$type);
-    my $format = $self->r->dir_config('DescriptionFormat');
-    if ($format) {
-      $r->print('#EXTINF:' , $data->{seconds} , ',');
-      (my $description = $format) =~ s{%([atfglncrdmsqS%])}
-                                      {$1 eq '%' ? '%' : $data->{$FORMAT_FIELDS{$1}}}gxe;
-      print $description;
-      print $CRLF;
-    } else {
-      $r->print('#EXTINF:' , $data->{seconds} ,
-		',', $data->{title},
-		' - ',$data->{artist},
-		' (',$data->{album},')',
-		$CRLF);
-    }
-    if ($local) {
-      $r->print($file,$CRLF);
-    } else {
-      $r->print ("$base$_?$stream_parms$CRLF");
-    }
-  }
   return OK;
 }
 
 sub stream_parms {
   my $self = shift;
   return "stream=1";
-}
-
-# this searches the current directory for MP3 files and subdirectories
-sub find_mp3s {
-  my $self = shift;
-  my $recurse = shift;
-
-#changing this so that it is possible to find mp3s from search page
-#  my $uri = dirname($self->r->uri);
-  my $uri = dirname(shift || $self->r->uri);
-
-  my $dir = dirname($self->r->filename);
-
-  my @uris = $self->sort_mp3s($self->_find_mp3s($dir,$recurse));
-  foreach (@uris) {
-    # strip directory part
-    substr($_,0,length($dir)+1) = '' if index($_,$dir) == 0;
-    # turn into a URL
-    $_ = "$uri/$_";
-  }
-  return \@uris;
-}
-
-# recursive find
-sub _find_mp3s {
-  my $self = shift;
-  my ($d,$recurse) = @_;
-  my ($directories,$files) = $self->read_directory($d);
-  # Add the directory back onto each file
-  unless ($d eq '.') {
-    foreach my $k (keys %$files) {
-      $files->{"$d/$k"} = $files->{$k};
-      delete $files->{$k};
-    }
-  }
-
-  if ($recurse) {
-    foreach (@$directories) {
-      my $f = $self->_find_mp3s("$d/$_",$recurse);
-      # Add the new files to our main hash
-      $files->{$_} = $f->{$_} foreach keys %$f;
-    }
-  }
-
-  return $files;
 }
 
 # sort MP3s
@@ -602,16 +549,6 @@ sub load_playlist {
   }
   $fh->close;
   return @mp3s
-}
-
-# shuffle an array
-sub shuffle {
-  my $self = shift;
-  my $list = shift;
-  for (my $i=0; $i<@$list; $i++) {
-    my $rand = rand(scalar @$list);
-    ($list->[$i],$list->[$rand]) = ($list->[$rand],$list->[$i]);  # swap
-  }
 }
 
 # top level for directory display
@@ -883,6 +820,7 @@ sub subdir_list {
 
   if($self->subdir_columns == 1){
 	my $statsheader;
+
 	if($self->r->dir_config('CacheStats') && $self->r->dir_config('CacheDir')){
 	  $statsheader = td(b('Last Accessed')). td(b('Times Accessed'));
 	}
@@ -902,7 +840,7 @@ sub subdir_list {
       my $i = $col * $rows + $row;
       my $contents = $subdirs[$i] ? $self->format_subdir($subdirs[$i]) : '&nbsp;';
 
-	  #only assume wrap in td() if multiple columns.  should td() be moved to format_subdir() ?
+      #only assume wrap in td() if multiple columns.  should td() be moved to format_subdir() ?
       print $self->subdir_columns == 1 ? $contents : td($contents);
 
 #      $i++;
@@ -1222,16 +1160,6 @@ sub control_buttons {
     sprintf('<input type="submit" name="Shuffle Selected" value="%s" />',
 			$self->x('Shuffle Selected'),
     );
-
-#  $return .=
-#    sprintf('<input type="submit" name="Shuffle All" value="%s" />',
-#      $self->x('Shuffle All'),
-#    ) unless $mode eq 'search';
-
-#  $return .=
-#    sprintf('<input type="submit" name="Play All" value="%s" />',
-#      $self->x('Play All'),
-#    ) unless $mode eq 'search';
 
   return $return;
 }
@@ -1799,84 +1727,6 @@ sub write_cache {
   }
 
   1;
-}
-
-# stream an MP3 file
-sub send_stream {
-  my $self = shift;
-  my ($file,$url) = @_;
-  my $r = $self->r;
-
-  my $mime = $r->content_type;
-  my $info = $self->fetch_info($file,$mime);
-  return DECLINED unless $info;  # not a legit mp3 file?
-  my $fh = $self->open_file($file) || return DECLINED;
-  binmode($fh);  # to prevent DOS text-mode foolishness
-
-  my $size = -s $file;
-  my $bitrate = $info->{bitrate};
-  if ($self->can('bitrate') && $self->bitrate) {
-    ($bitrate = $self->bitrate) =~ s/ kbps//i;
-    # quick approximation
-    $size = int($size * ($bitrate / $info->{bitrate}));
-  }
-  my $description = $info->{description};
-  my $genre       = $info->{genre} || $self->lh->maketext('unknown');
-
-  my $range = 0;
-  $r->header_in("Range")
-    and $r->header_in("Range") =~ m/bytes=(\d+)/
-    and $range = $1
-    and seek($fh,$range,0);
-
-  # Look for a descriptive file that has the same base as the mp3 file.
-  # Also look for various index files.
-  my $icyurl = $self->stream_base(1);
-  my $base   = basename($file);
-  $base =~ s/\.\w+$//;  # get rid of suffix
-  my $dirbase  = dirname($file);
-  my $urlbase  = dirname($url);
-  foreach ("$base.html","$base.htm","index.html","index.htm") {
-    my $file = "$dirbase/$_";
-    if (-r $file) {
-      $icyurl .= "$urlbase/$_";
-      last;
-    }
-  }
-
-  $r->print("ICY ". ($range ? 206 : 200) ." OK$CRLF");
-  $r->print("icy-notice1:<BR>This stream requires a shoutcast/icecast compatible player.<BR>$CRLF");
-  $r->print("icy-notice2:Namp! (Apache::MP3)<BR>$CRLF");
-  $r->print("icy-name:$description$CRLF");
-  $r->print("icy-genre:$genre$CRLF");
-  $r->print("icy-url: $icyurl$CRLF");
-  $r->print("icy-pub:1$CRLF");
-  $r->print("icy-br:$bitrate$CRLF");
-  $r->print("Accept-Ranges: bytes$CRLF");
-  $r->print("Content-Range: bytes $range-" . ($size-1) . "/$size$CRLF")
-    if $range;
-  $r->print("Content-Length: $size$CRLF");
-  $r->print("Content-Type: $mime$CRLF");
-  $r->print("$CRLF");
-  return OK if $r->header_only;
-
-  if (my $timeout = $self->stream_timeout) {
-    my $seconds  = $info->{seconds};
-    $seconds ||= 60;  # shouldn't happen
-    my $fraction = $timeout/$seconds;
-    my $bytes    = int($fraction * $size);
-    while ($bytes > 0) {
-      my $data;
-      my $b = read($fh,$data,2048) || last;
-      $bytes -= $b;
-      $r->print($data);
-    }
-    return OK;
-  }
-
-  # we get here for untimed transmits
-  $r->send_fd($fh);
-  return OK;
 }
 
 # called to open the MP3 file
@@ -3007,9 +2857,7 @@ to take its default action.
 =item $response_code = $mp3->stream($file)
 
 This method is called to stream an MP3 file.  It is passed the URL of
-the requested file and returns an Apche response code.  It checks
-whether streaming is allowed and then passes the request on to
-send_stream().
+the requested file and returns an Apche response code.
 
 =item $fh = $mp3->open_file($file)
 
@@ -3025,14 +2873,6 @@ called from various places.  C<$urls> is an array reference containing
 the MP3 URLs to incorporate into the playlist, and C<$shuffle> is a
 flag indicating that the order of the playlist should be randomized
 prior to sending it.  No return value is returned.
-
-=item $mp3_info = $mp3->find_mp3s($recurse)
-
-This method searches for all MP3 files in the currently requested
-directory.  C<$recurse>, if true, causes the method to recurse through
-all subdirectories.  The return value is a hashref in which the keys
-are the URLs of the found MP3s, and the values are hashrefs containing
-the MP3 tag fields recovered from the files ("title", etc.).
 
 =item @urls = $mp3->sort_mp3s($mp3_info)
 
@@ -3228,13 +3068,6 @@ a hashref of the same format used by fetch_info().
 Writes MP3 information to cache.  C<$file> and C<$info> are the path
 to the file and its MP3 tag information, respectively.  Returns a
 boolean indicating the success of the operation.
-
-=item $result_code = $mp3->send_stream($file,$uri)
-
-The send_stream() method generates an ICY (shoutcast) header for the
-indicated file (given by physical path C<$file> and URI C<$uri>) and
-streams it to the client.  It returns an Apache result code indicating 
-the success of the operation.
 
 =item $boolean = $mp3->download_ok
 
