@@ -20,7 +20,7 @@ use File::Basename 'dirname','basename';
 use File::Path;
 use vars qw($VERSION %SEARCH);
 
-$VERSION = '3.04';
+$VERSION = '3.05';
 my $CRLF = "\015\012";
 
 use constant DEBUG => 0;
@@ -159,8 +159,7 @@ sub help_screen {
 				   -title => $self->x('Quick Help Summary'),
 				   -dir => $self->lh->direction,
 				   -head => meta({-http_equiv => 'Content-Type',
-								  -content    => 'text/html; charset='
-								  . $self->html_content_type
+								  -content    => $self->html_content_type
 								 }
 								),
 				   -script =>[ {-language => 'JavaScript',
