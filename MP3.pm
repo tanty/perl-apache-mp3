@@ -1178,19 +1178,19 @@ sub missing_comment {
 sub description {
   my $self = shift;
   my $data = shift;
+  my $description;
   my $format = $self->r->dir_config('DescriptionFormat');
   if ($format) {
-    (my $description = $format) =~ s{%([atfglncrdmsqS%])}
+    ($description = $format) =~ s{%([atfglncrdmsqS%])}
       {$1 eq '%' ? '%'
 	 : $data->{$FORMAT_FIELDS{$1}}
        }gxe;
-    return $description;
   } else {
-    my $description = $data->{title} || basename($data->{filename},@suffix);
+    $description = $data->{title} || basename($data->{filename},@suffix);
     $description .= " - $data->{artist}" if $data->{artist};
     $description .= " ($data->{album})"  if $data->{album};
-    return $description;
   }
+  return $description;
 }
 
 sub stream_base {

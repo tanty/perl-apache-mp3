@@ -151,7 +151,7 @@ sub lookup_descriptions {
     next unless my $sub  = $r->lookup_uri($song);
     next unless my $file = $sub->filename;
     next unless -r $file;
-    next unless my $info = $self->fetch_info($file);
+    next unless my $info = $self->fetch_info($file,$sub->content_type);
     $d{$song} = " $info->{description}";
   }
   return \%d;
