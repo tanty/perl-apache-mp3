@@ -10,7 +10,7 @@ use File::Basename 'dirname','basename';
 use File::Path;
 use vars qw($VERSION);
 
-$VERSION = '2.25';
+$VERSION = '2.26';
 my $CRLF = "\015\012";
 
 # defaults:
@@ -245,6 +245,7 @@ sub send_playlist {
   $r->print("#EXTM3U$CRLF");
   my $stream_parms = $self->stream_parms;
   foreach (@$urls) {
+    $self->path_escape(\$_);
     my $subr = $r->lookup_uri($_) or next;
     my $file = $subr->filename;
     my $type = $subr->content_type;
@@ -263,7 +264,6 @@ sub send_playlist {
 		' (',$data->{album},')',
 		$CRLF);
     }
-    $self->path_escape(\$_);
     if ($local) {
       $r->print($file,$CRLF);
     } else {
@@ -913,7 +913,7 @@ sub read_vorbis {
 	    comment => $comments->{comment} || $comments->{COMMENT} || '',
 	    year => $comments->{year}       || $comments->{YEAR}    || '',
 	    track => $comments->{tracknumber} || $comments->{TRACKNUMBER} || '',
-	    bitrate => $info->bitrate_nominal/1000,
+	    bitrate => $ogg->bitrate/1000,
 	    samplerate => $info->rate,
 	    seconds => $sec,
 	    min => int $sec/60,

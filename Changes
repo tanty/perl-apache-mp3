@@ -1,3 +1,8 @@
+2.25 Wed Apr 17 11:03:24 EDT 2002
+	- Added patch from Tom Hughes to correctly escape paths in the playlist.
+	- Added patch from Tom Hughes to fetch the average bitrate for VBR Ogg
+		files rather than the nominal bitrate (which is meaningless).
+
 2.25 Tue Apr  9 12:35:44 EDT 2002
 	- Added patch from Clemens Schrimpe to handle diacritical marks in
 		CD icon names.
