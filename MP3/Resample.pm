@@ -162,7 +162,7 @@ sub open_file {
   my $presets = $self->presets($bitrate);
   my $type = $self->r->lookup_file($file)->content_type;
   my $decompress = $self->decompressor ($type) || "";
-  my $encode = ENCODE;
+  my $encode = $self->r->dir_config('MP3Encoder') || ENCODE;
   my $inputtype = length $decompress ? "" : " --mp3input";
   my $percentF = length $decompress ? "" : ("<" . quotemeta ($file));
   $decompress =~ s{%([a-zA-Z])}

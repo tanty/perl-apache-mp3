@@ -1,3 +1,6 @@
+3.05	
+	-Performance and functionality improvements to search function
+	from Evan Harris.	
 3.04 Fri Nov 29 16:33:29 EST 2002
 	-Fixed incorrect HTML content type in the META tag.
 	-Fixed incorrect playlist port numbers when running in non-virtual
