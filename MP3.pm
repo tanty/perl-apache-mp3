@@ -39,7 +39,7 @@ use constant COVERIMAGESMALL   => 'cover_small.jpg';
 use constant PLAYLISTIMAGE=> 'playlist.jpg';
 use constant SONGICON     => 'sound.gif';
 use constant ARROWICON    => 'right_arrow.gif';
-use constant SUBDIRCOLUMNS => 3;
+use constant SUBDIRCOLUMNS => 1; #was 3 -allen
 use constant PLAYLISTCOLUMNS => 3;
 use constant HELPIMGURL   => 'apache_mp3_fig1.gif:374x292';
 my %FORMAT_FIELDS = (
@@ -2235,7 +2235,7 @@ Table 1: Configuration Variables
  MissingComment        string           "unknown" (or translation)
  PathStyle             Staircase|Arrows Staircase
  SongIcon	       URL		sound.gif
- SubdirColumns	       integer		3
+ SubdirColumns	       integer		1
  Stylesheet	       URL		apache_mp3.css
  TitleIcon	       URL		cd_icon.gif
  DefaultLanguage       languagetag      en-US
@@ -2535,7 +2535,8 @@ list, "sound.gif" by default.
 =item SubdirColumns I<integer>
 
 The number of columns in which to display subdirectories (the small
-"CD icons").  Default 3.
+"CD icons").  A value other than 1 suppresses the display of
+subdirectory access-time and modification-time info.  Default 1.
 
 =item PlaylistColumns I<integer>
 
@@ -3099,7 +3100,9 @@ Returns the directory for use in caching MP3 tag information
 =item $int = $mp3->subdir_columns
 
 Returns the number of columns to use in displaying subdirectories
-(little CD icons).
+(little CD icons).  If the return value is 1, directory access-time
+and modification-time are displayed.  If not equal to one, these
+data are suppressed.
 
 =item $dir = $mp3->default_dir
 
