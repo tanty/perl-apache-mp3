@@ -751,7 +751,7 @@ sub directory_top {
     print p(strong(
         $self->x('Note:')
       ),' ',
-      $self->x("In this demo, streaming is limited to approximately [_1,second].", $t),
+      $self->x("In this demo, streaming is limited to approximately [quant,_1,second,seconds].", $t),
       "\n"
     );
   }
