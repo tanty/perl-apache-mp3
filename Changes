@@ -1,4 +1,4 @@
-2.25 Wed Apr 17 11:03:24 EDT 2002
+2.26 Wed Apr 17 11:03:24 EDT 2002
 	- Added patch from Tom Hughes to correctly escape paths in the playlist.
 	- Added patch from Tom Hughes to fetch the average bitrate for VBR Ogg
 		files rather than the nominal bitrate (which is meaningless).
