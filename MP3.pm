@@ -882,7 +882,17 @@ sub subdir_list {
   print start_table({-border=>0,-id=>'diroutertable'}),"\n";
 
   if($self->subdir_columns == 1){
-	print TR(td(b('Directory')),td(b('Play Options')),td(b('Last Accessed')),td(b('Last Modified')));
+	my $statsheader;
+	if($self->r->dir_config('CacheStats') && $self->r->dir_config('CacheDir')){
+	  $statsheader = td(b('Last Accessed')). td(b('Times Accessed'));
+	}
+
+	print TR(
+			 td(b('Directory')),
+			 td(b('Play Options')),
+			 td(b('Last Modified')),
+			 $statsheader,
+			);
   }
 
 #  my $i = 0; #index of subdir to render
@@ -929,6 +939,11 @@ sub format_subdir {
 
   my($atime,$mtime) = (stat($subdirpath))[8,9];
 
+  my($last,$times);
+  if($self->r->dir_config('CacheStats')){
+	($last,$times) = $self->stats($self->r->filename,$subdir);
+  }
+
   if($self->subdir_columns == 1){
 	$result = td(
 				 a({-href=>$uri.'/playlist.m3u?Play+All+Recursive=1'},
@@ -953,11 +968,13 @@ sub format_subdir {
 				   .']')."\n"
 				)
 			 .td(
-				 scalar(localtime($atime))
-				)
-			 .td(
 				 scalar(localtime($mtime))
 				);
+
+	if($self->r->dir_config('CacheStats')){
+	  $result .= td($last) . td($times);
+	}
+
   } else {
 	$result = start_table({-border=>0,-alight=>'LEFT'}).start_TR().td(
                   a({-href=>$uri.'/playlist.m3u?Play+All+Recursive=1'},
@@ -980,6 +997,16 @@ sub format_subdir {
   }
 
   return $result;
+}
+
+sub last_accessed {
+  my $self = shift;
+  warn join ' ', @_;
+}
+
+sub times_accessed {
+  my $self = shift;
+  warn join ' ', @_;
 }
 
 sub playlist_list_top {
@@ -1411,6 +1438,53 @@ sub fetch_info {
 
   $data{description} = $self->description(\%data);
   return \%data;
+}
+
+<<<<<<< MP3.pm
+sub _stats {
+  my $self = shift;
+  my $dirname = shift;
+
+  return unless my $cache = $self->cache_dir;
+  my $cache_file = $cache.'/stats';
+
+  if(!$self->{_stat}){
+	#read stats
+	if(-f $cache_file){
+	  open(C, $cache_file) or die "couldn't open statscache for reading $cache_file: $!";
+	  while(my $line = <C>){
+		chomp $line;
+		my($path,$last,$count) = split /\t/, $line;
+		$self->{_stat}{$path}{last_accessed}  = $last;
+		$self->{_stat}{$path}{times_accessed} = $count;
+	  }
+	  close(C);
+	}
+
+	#update stats
+	$self->{_stat}{$dirname}{last_accessed}  = scalar(localtime());
+	$self->{_stat}{$dirname}{times_accessed}++;
+
+	#write stats
+	open(C,">$cache_file") or die "couldn't open stats for writing: $!";
+	foreach my $k (keys %{ $self->{_stat} }){
+	  print C $k,"\t",$self->{_stat}{$k}{last_accessed},"\t",$self->{_stat}{$k}{times_accessed},"\n";
+	}
+	close(C);
+  }
+
+  return($self->{_stat}{$dirname}{last_accessed} || 'never', $self->{_stat}{$dirname}{times_accessed} || 'never');
+}
+
+sub stats {
+  my $self    = shift;
+  my $prefix  = shift;
+  my $dirname = shift;
+
+  #make sure we always call on the prefix first, to properly increment it's viewing.
+  $self->_stats($prefix);
+
+  return($self->_stats($prefix .'/'. $dirname));
 }
 
 # this creates a disk cache for the search db
@@ -2264,6 +2338,14 @@ The search data resides in a disk cache.  I haven't figured out a good
 way to check if the file is stale (if media files have changed or moved,
 for instance).  I'd recommend unlinking the search file from your
 perl.startup file.  The search cache is at $CacheDir/search.
+
+Statistics can be optionally maintained on the last time a directory
+was accessed via Namp!, as well as the total number of accesses a
+directory has received.  This feature requires that only one
+column of subdirectories be displayed (the default), and that the
+option in the <Location> directive is set as:
+
+ PerlSetVar  CacheStats  1
 
 =item 8. Set up an information cache directory (optional)
 
