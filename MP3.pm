@@ -1319,6 +1319,11 @@ sub create_searchcache {
 	my $cachedirname = dirname($cache_file);
 	-d $cachedirname || eval{mkpath($cachedirname)} || return;
 	if (my $c = IO::File->new(">>$cache_file")) {
+
+	  #replace the file path with the real base uri
+	  my $basedir = $self->r->dir_config('BaseDir');
+	  $dirname =~ s/$baseuri/$basedir/;
+
 	  $data->{filepath} = $dirname;
 	  print $c join $;,%$data;
 	  print $c "\n";
@@ -1704,7 +1709,7 @@ sub playlist_icon {
   my $self = shift; 
   my $image = $self->r->dir_config('PlaylistImage') || PLAYLISTIMAGE;
   my $directory_specific_icon = $self->r->filename."/$image";
-warn $directory_specific_icon;
+  warn $directory_specific_icon if DEBUG;
   return -e $directory_specific_icon
     ? $self->r->uri . "/$image"
     : $self->get_dir('PlaylistIcon',PLAYLISTICON);
