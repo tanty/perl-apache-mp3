@@ -1155,6 +1155,7 @@ sub cd_list_icon  {
   my $subdir = shift;
   my $image = $self->r->dir_config('CoverImageSmall') || COVERIMAGESMALL;
   my $directory_specific_icon = $self->r->filename."/$subdir/$image";
+warn $directory_specific_icon;
   return -e $directory_specific_icon 
     ? $self->r->uri . "/$subdir/$image"
     : $self->get_dir('DirectoryIcon',CDLISTICON);
@@ -1163,6 +1164,7 @@ sub playlist_icon {
   my $self = shift; 
   my $image = $self->r->dir_config('PlaylistImage') || PLAYLISTIMAGE;
   my $directory_specific_icon = $self->r->filename."/$image";
+warn $directory_specific_icon;
   return -e $directory_specific_icon
     ? $self->r->uri . "/$image"
     : $self->get_dir('PlaylistIcon',PLAYLISTICON);
@@ -1324,7 +1326,7 @@ A B<demo version> can be browsed at http://www.modperl.com/Songs/.
 =head1 DESCRIPTION
 
 This module makes it possible to browse a directory hierarchy
-containing MP3, Ogg Vorbis, or Wave files, sort them on various
+containing MP3, Ogg Vorbis, or Wav files, sort them on various
 fields, download them, stream them to an MP3 decoder like WinAmp, and
 construct playlists.  The display is configurable and subclassable.
 
@@ -2415,11 +2417,19 @@ be:
  parent_icon()	URI to the icon to use to move up in directory
                      hierarchy (no longer used)
  cd_icon        URI for the big CD icon printed in the upper left corner
- cd_list_icon   URI for the little CD icons in the subdirectory listing
- playlist_icon  URI for the playlist icon
  song_icon	URI for the music note icons printed for each MP3 file
  arrow_icon	URI for the arrow used in the navigation bar
  help_url	URI of the document to display when user asks for help
+
+The following methods return the values of their corresponding
+configuration variables, resolved against the current directory, but if
+that fails, against the base directory.  This is useful for customizing
+the appearance icons on a per-directory basis.  For example, I like my
+directories containing shoutcast playlists to appear differently than
+my directories containing mp3 and m3u files.
+
+ cd_list_icon   URI for the little CD icons in the subdirectory listing
+ playlist_icon  URI for the playlist icon
 
 =item $boolean = $mp3->skip_directory($dir)
 
