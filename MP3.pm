@@ -1842,12 +1842,10 @@ sub stream_base {
     return $basename;
   }
 
-  my $vhost = $r->hostname;
-  unless ($vhost) {
-    $vhost = $r->server->server_hostname;
-    $vhost .= ':' . $r->get_server_port unless $r->get_server_port == 80;
-  }
-  return "http://${auth_info}${vhost}";
+  my $host = $r->hostname        || $r->server->server_hostname;
+  my $port = $r->get_server_port || $r->server->port;
+  $host .= ":$port" unless $port == 80;
+  return "http://${auth_info}${host}";
 }
 
 
