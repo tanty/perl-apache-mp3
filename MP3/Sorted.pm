@@ -12,6 +12,8 @@ use vars qw(@ISA $VERSION);
 
 $VERSION = 2.01;
 
+use constant DEBUG => 0;
+
 # to choose the right type of sort for each of the mp3 fields
 my %sort_modes = (
 		  # config        field       sort type
@@ -67,7 +69,7 @@ sub sort_mp3s {
 
   if (!@sort_info) {
     # no known sort types given
-    $self->r->warn("No recognized sort fields passed to sort_mp3s()");
+    $self->r->warn("No recognized sort fields passed to sort_mp3s()") if DEBUG;
     return $self->SUPER::sort_mp3s($files);
   }
 
