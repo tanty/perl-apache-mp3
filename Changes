@@ -1,6 +1,8 @@
 2.25 ????
 	- Added patch from John Regehr to get CDDB information from an 
 	external index file, if present.
+        - Put warning in the error_log if PerlSetupEnv has been set to off
+        (thanks to Stas Bekman and Eric Hammond)  
 
 2.24 Sun Jan 27 08:42:58 MST 2002
 	- Playlists work again.  This was broken in version 2.22 when

@@ -77,6 +77,11 @@ sub run {
   my $self = shift;
   my $r = $self->r;
 
+  # check that we aren't running under PerlSetupEnv Off
+  if ($ENV{MOD_PERL} && !$ENV{SCRIPT_FILENAME}) {
+     warn "CGI.pm cannot run with 'PerlSetupEnv Off', please set it to On";
+  }
+
   # generate directory listing
   return $self->process_directory($r->filename) 
     if -d $r->filename;  # should be $r->finfo, but STILL problems with this
