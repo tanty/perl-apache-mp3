@@ -11,6 +11,7 @@ use CGI qw(:standard *table *TR *td escape);
 use CGI::Cookie;
 use Apache::MP3::Playlist;
 use File::Basename;
+$VERSION = 1.0;
 
 @ISA = 'Apache::MP3::Playlist';
 
