@@ -8,6 +8,7 @@ WriteMakefile(
     ABSTRACT_FROM       => 'MP3.pm',
     VERSION             => '3.05',
     PREREQ_PM		=> {
+			    MP3::Icecast => 0.01,
 			    MP3::Info  => 0.8,
 			    Apache     => 1.14,
 			    Audio::Wav => 0.02,
