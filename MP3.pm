@@ -1028,13 +1028,27 @@ sub send_stream {
     and $range = $1
     and seek($fh,$range,0);
 
+  # Look for a descriptive file that has the same base as the mp3 file.
+  # Also look for various index files.
+  my $icyurl = $self->stream_base(1);
+  my $base   = basename($file);
+  $base =~ s/\.\w+$//;  # get rid of suffix
+  my $dirbase  = dirname($file);
+  my $urlbase  = dirname($url);
+  foreach ("$base.html","$base.htm","index.html","index.htm") {
+    my $file = "$dirbase/$_";
+    if (-r $file) {
+      $icyurl .= "$urlbase/$_";
+      last;
+    }
+  }
 
   $r->print("ICY ". ($range ? 206 : 200) ." OK$CRLF");
   $r->print("icy-notice1:<BR>This stream requires a shoutcast/icecast compatible player.<BR>$CRLF");
   $r->print("icy-notice2:Namp! (Apache::MP3)<BR>$CRLF");
   $r->print("icy-name:$description$CRLF");
   $r->print("icy-genre:$genre$CRLF");
-  $r->print("icy-url:",$self->stream_base(1),$CRLF);
+  $r->print("icy-url: $icyurl$CRLF");
   $r->print("icy-pub:1$CRLF");
   $r->print("icy-br:$bitrate$CRLF");
   $r->print("Accept-Ranges: bytes$CRLF");
@@ -1069,7 +1083,7 @@ sub send_stream {
 sub open_file {
   my $self = shift;
   my $file = shift;
-  return IO::File->new($file);
+  return IO::File->new($file,O_RDONLY);
 }
 
 #################################################
