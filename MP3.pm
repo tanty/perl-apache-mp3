@@ -6,13 +6,17 @@ use Apache::Constants qw(:common REDIRECT HTTP_NO_CONTENT DIR_MAGIC_TYPE HTTP_NO
 use Apache::MP3::L10N;
 use IO::File;
 use Socket 'sockaddr_in';
-use CGI qw/:standard escape *table *TR *blockquote *center *h1/;
+use CGI qw/:standard escape *table *td *TR *blockquote *center center *h1/;
+use CGI::Carp 'fatalsToBrowser';
+
 use File::Basename 'dirname','basename';
 use File::Path;
-use vars qw($VERSION);
+use vars qw($VERSION $CACHED $SEARCH);
 
 $VERSION = '3.03';
 my $CRLF = "\015\012";
+
+use constant DEBUG => 0;
 
 # defaults:
 use constant BASE_DIR     => '/apache_mp3';
@@ -65,7 +69,7 @@ sub new {
   $new->{'r'} ||= $r if $r;
 
   my @lang_tags;
-  push @lang_tags,split /,\s+/,$r->header_in('Accept-language') 
+  push @lang_tags,split /,\s+/,$r->header_in('Accept-language')
     if $r->header_in('Accept-language');
   push @lang_tags,$r->dir_config('DefaultLanguage') || 'en-US';
 
@@ -83,15 +87,77 @@ sub new {
 
   $new->{'suffixes'} = [ qw(.ogg .OGG .wav .WAV .mp3 .MP3 .mpeg .MPEG)];
 
+  # if the search function is enabled, we want to pre-cache the tag info
+  # for searching.
+  if($new->r->dir_config('EnableSearch') && !$CACHED){
+	
+	#this gets the system path of the Apache::MP3 root directory 'BaseDir'
+    my $uri = $new->r->lookup_file($new->r->lookup_uri( $new->r->dir_config('BaseDir') )->filename)->filename;
+	$new->precache($uri,$uri);
+	$CACHED = 1;
+	warn "done caching!" ;#. $new->is_cached;
+  } else {
+	warn "already cached!";
+  }
+
   return $new;
 }
 
+#this does all caching after the first request if EnableSearch is on
+sub precache {
+  my $self = shift;
+  my $dirname = shift;
+  my $baseuri = shift;
+
+  warn "precaching: $dirname" if DEBUG;
+
+  opendir(D,$dirname);
+  my @dirents = readdir(D);
+  closedir(D);
+  foreach my $dirent (@dirents){
+
+	warn "A $dirname*$dirent" if DEBUG;
+	warn "recursing $dirname/$dirent" if -d "$dirname/$dirent" && DEBUG;
+
+	next if $dirent eq '.' or $dirent eq '..';
+	$self->precache("$dirname/$dirent",$baseuri) if -d "$dirname/$dirent";
+	next unless -f "$dirname/$dirent";
+
+	my $file = $self->r->lookup_file("$dirname/$dirent")->filename;
+	my $type = $self->r->lookup_file("$dirname/$dirent")->content_type;
+
+	warn "A" if DEBUG;
+	warn $file if DEBUG;
+	warn $self->r->filename if DEBUG;
+
+	next unless defined $file && defined $type;
+
+	warn "B" if DEBUG;
+
+    my $data = $self->fetch_info($file,$type);
+
+	# ok, this is sketchy.  we are substituting the value of
+	# BaseDir for $baseuri (the system path that corresponds
+    # to the apache path).  i haven't fully thought this out,
+	# it may cause problems with directory aliases below
+	# BaseDir, and with directory links... if you think you
+	# find a problem like this, notify the developers.
+	my $basedir = $self->r->dir_config('BaseDir');
+	my $searchdir = $dirname;
+	$searchdir =~ s/^$baseuri/$basedir/;
+
+	$SEARCH->{"$searchdir/$dirent"} = $data if $data;
+
+	warn join " ", keys %$SEARCH if DEBUG;
+  }
+}
+
 sub x {  # maketext plus maybe escape.  The "x" for "xlate"
-   my $x = (my $lh = shift->{'lh'})->maketext(@_);
-   $x =~ s/([^\x00-\x7f])/'&#'.ord($1).';'/eg
-     if $x =~ m/[^\x00-\x7f]/ and $lh->must_escape;
-   return $x;
- }
+  my $x = (my $lh = shift->{'lh'})->maketext(@_);
+  $x =~ s/([^\x00-\x7f])/'&#'.ord($1).';'/eg
+	if $x =~ m/[^\x00-\x7f]/ and $lh->must_escape;
+  return $x;
+}
 
 sub lh { return shift->{lh} }  # language handle
  
@@ -175,8 +241,12 @@ sub run {
   # this is called to show a help screen
   return $self->help_screen if param('help_screen');
 
+  # generate search results from params 'search_category' and 'search_string'
+  return $self->process_search(param('search_category'),param('search_string'))
+	if param('search_category') and param('search_string');
+
   # generate directory listing
-  return $self->process_directory($r->filename) 
+  return $self->process_directory($r->filename)
     if -d $r->filename;  # should be $r->finfo, but STILL problems with this
 
   #simple download of file
@@ -210,7 +280,7 @@ sub run {
   # this is called to generate a playlist for one file
   if (param('play')) {
     my $dot3 = '.m3u|.pls';
-    my($basename) = $r->uri =~ m!([^/]+?)($dot3)?$!;
+    my($basename,$ext) = $r->uri =~ m!([^/]+?)($dot3)?$!;
     $basename = quotemeta($basename);
     my @matches;
     if (-e $self->r->filename) {
@@ -245,6 +315,81 @@ sub run {
   return FORBIDDEN;
 }
 
+#this generates a list of files matching the search criteria
+sub process_search {
+  my $self = shift;
+  my $category = shift;
+  my $query = shift;
+  my $dir = $self->r->filename;
+  my $original_query = $query;
+  $query =~ s/\*/\.*/g; #so that wildcard *s can be used in searches
+  $query = '.*'.$query.'.*';
+
+  $self->r->send_http_header( $self->html_content_type );
+  return OK if $self->r->header_only;
+
+  print start_html(
+				   -lang => $self->lh->language_tag,
+				   -title => $self->x('Search Results'),
+				   -dir => $self->lh->direction,
+				   -head => meta({-http_equiv => 'Content-Type',
+								  -content    => 'text/html; charset='
+								  . $self->html_content_type
+								 }),
+				  );
+
+  $self->page_top($dir);
+  $self->directory_top($dir);
+
+  #these are the data keys:
+  #track description min title album filename year duration bitrate artist samplerate comment genre seconds sec
+  my %translate = (
+				   artist => 'artist',
+				   album  => 'album',
+				   song   => 'title',
+				   style  => 'genre',
+				  );
+
+
+#  print h1('category: ',$category);
+
+  if(DEBUG){
+	foreach my $file (keys %$SEARCH){
+	  print join " ", keys %{$SEARCH->{$file}}, br;
+	}
+  }
+
+  my $RESULTS = {};
+
+  foreach my $file ( keys %$SEARCH ){
+	if( $category eq 'file' && basename($file) =~ /^$query$/i ){
+      $RESULTS->{$file} = $SEARCH->{$file};
+	}
+	elsif( $SEARCH->{$file}->{$translate{$category}} =~ /^$query$/i ){
+      $RESULTS->{$file} = $SEARCH->{$file};
+	}
+  }
+
+  print center("$category \"".$original_query."\" ($query) matched ".scalar(keys(%$RESULTS))." files");
+  $self->list_mp3s( $RESULTS ,'search');
+
+  #<DEBUG>
+  #  print h1($self->r->filename);
+  #  print h1( $self->r->lookup_uri($self->r->dir_config('BaseDir'))->filename );
+  #  print h1( $self->r->lookup_file($self->r->lookup_uri($self->r->dir_config('BaseDir'))->filename) );
+  #  print h1( $self->r->lookup_file($self->r->lookup_uri( $self->r->dir_config('BaseDir') )->filename)->content_type );
+  #  print h1( $self->r->lookup_file($self->r->lookup_uri( $self->r->dir_config('BaseDir') )->filename)->filename );
+  #</DEBUG>
+
+  #http://localhost/mp3/playlist.m3u?file=wave/09.%20Antigua.Mp3;Play%20Selected=Play%Selected
+
+  $self->directory_bottom($dir);
+
+  print "\n", end_html();
+  return;
+}
+
+
 # this generates the top-level directory listing
 sub process_directory {
   my $self = shift;
@@ -278,7 +423,6 @@ sub download_file {
   }
 
 }
-
 
 # stream the indicated file
 sub stream {
@@ -494,8 +638,8 @@ sub list_directory {
     $self->list_mp3s($mp3s);
     print "\n<!-- end mp3s -->\n";
   }
-  print hr                         unless %$mp3s;
   print "\n<!-- end main -->\n";
+  print hr                         unless %$mp3s;
   $self->directory_bottom($dir);
   return OK;
 }
@@ -524,6 +668,10 @@ sub directory_top {
 
   my $title = $self->r->uri;
   my $links;
+
+  print start_table({-width => '100%'}), start_TR;
+  print start_td({-width=>'100%'});
+
   if ($self->path_style eq 'staircase') {
     $links = $self->generate_navpath_staircase($title);
   } else {
@@ -555,6 +703,41 @@ sub directory_top {
       "\n"
     );
   }
+
+  print end_td;
+
+  if($self->r->dir_config('EnableSearch')){
+	print td($self->display_searchform('1'));
+  }
+
+  print end_TR, end_table;
+}
+
+# this produces a search form in a table of width as first arg
+sub display_searchform {
+  my $self  = shift;
+  my $width = shift;
+
+  my $uri = $self->r->uri;  # for self referencing
+  $uri =~ s!([^a-zA-Z0-9/])!uc sprintf("%%%02x",ord($1))!eg;
+
+  my $form = "\n\n<!-- start searchform -->\n\n" . start_form(
+															  -name=>'search_form',
+															  -action=>$self->r->dir_config('BaseDir').'/?',
+															  -method=>'GET'
+															 );
+  $form .= table(TR(td(font({-size=>-1},'<nobr>',
+						 radio_group(-name   => 'search_category',
+									 -values => ['artist','album','song','style','file'],
+									)
+						),
+					br,
+					textfield(-name => 'search_string'),
+					submit('Search'),
+					'</nobr>',
+				   )));
+  $form .= "\n\n<!-- end searchform -->\n\n" . end_form();
+  return $form;
 }
 
 # staircase style path
@@ -566,7 +749,7 @@ sub generate_navpath_staircase {
 
   my @components = split '/',$uri;
   unshift @components,'' unless @components;
-  my ($path,$links);
+  my ($path,$links) = ('',br);
   my $current_style = "line-height: 1.2; font-weight: bold; color: red;";
   my $parent_style  = "line-height: 1.2; font-weight: bold;";
 
@@ -591,7 +774,7 @@ sub generate_navpath_arrows {
   my @components = split '/',$uri;
   unshift @components,'' unless @components;
   my $path;
-  my $links = start_h1();
+  my $links = br . '&nbsp;&nbsp;' ; #start_h1();
   my $arrow = $self->arrow_icon;
   for (my $c=0; $c < @components-1; $c++) {
     $links .= '&nbsp;' . img({-src=>$arrow}) if $path;
@@ -600,7 +783,7 @@ sub generate_navpath_arrows {
   }
   $links .= '&nbsp;' . img({-src=>$arrow}) if $path;
   $links .= "&nbsp;". ($components[-1] || $home);
-  $links .= end_h1();
+  $links .= br;#end_h1();
   return $links;
 }
 
@@ -608,8 +791,12 @@ sub generate_navpath_arrows {
 sub directory_bottom {
   my $self = shift;
   my $dir  = shift;  # actually not used
+  my $mp3s = shift;
 
-  print 
+  #allow masking of 'Authored by Lincoln...' and helplink.
+  return if $self->r->dir_config('SuppressCredits');
+
+  print
     table({-width=>'100%',-border=>0},
 	  TR(
 	     td({$self->aleft},
@@ -625,7 +812,7 @@ sub directory_bottom {
 		),
 	     td({$self->aright},$self->get_help))
 	     );
-  print "<!-- ",
+  print "<!--",
     sprintf("\n %s v%s", __PACKAGE__, $VERSION || '0'),
     (ref($self) eq __PACKAGE__) ? () :
     sprintf("\n %s v%s", ref($self), $self->VERSION || '0'),
@@ -871,16 +1058,20 @@ sub list_txtfiles {
 sub list_mp3s {
   my $self = shift;
   my $mp3s = shift;  #hashref
+  my $mode = shift;  #how should we construct the urls?  this is used 
+                     #to create alternate form parameters for the search
+                     #page
 
-  $self->mp3_list_top($mp3s);
-  $self->mp3_list($mp3s);
-  $self->mp3_list_bottom($mp3s);
+  $self->mp3_list_top(   $mp3s,$mode);
+  $self->mp3_list(       $mp3s,$mode);
+  $self->mp3_list_bottom($mp3s,$mode);
 }
 
 # top of MP3 file listing
 sub mp3_list_top {
   my $self = shift;
   my $mp3s = shift;  #hashref
+  my $mode = shift;
   print hr;
 
   my $uri = $self->r->uri;  # for self referencing
@@ -945,6 +1136,7 @@ sub mp3_table_header {
 sub mp3_list_bottom {
   my $self = shift;
   my $mp3s = shift;  #hashref
+  my $mode = shift;
   print  TR(td(),
 	    td({$self->aleft,-colspan=>10},$self->control_buttons))
     if $self->stream_ok;
@@ -957,12 +1149,13 @@ sub mp3_list_bottom {
 sub mp3_list {
   my $self = shift;
   my $mp3s = shift;  #hashref
+  my $mode = shift;
 
   my @f = $self->sort_mp3s($mp3s);
   my $count = 0;
   for my $song (@f) {
     my $highlight = $count++ % 2 ? 'highlight' : 'normal';
-    my $contents   = $self->format_song($song,$mp3s->{$song},$count);
+    my $contents   = $self->format_song($song,$mp3s->{$song},$count,$mode);
     print TR({-class=>$highlight},td($contents)), "\n";
   }
 }
@@ -970,8 +1163,8 @@ sub mp3_list {
 # return the contents of the table for each mp3
 sub format_song {
   my $self = shift;
-  my ($song,$info,$count) = @_;
-  my @contents = ($self->format_song_controls($song,$info,$count),
+  my ($song,$info,$count,$mode) = @_;
+  my @contents = ($self->format_song_controls($song,$info,$count,$mode),
 		  $self->format_song_fields  ($song,$info,$count));
   return \@contents;
 }
@@ -980,12 +1173,28 @@ sub format_song {
 # Each list item becomes a cell in the table.
 sub format_song_controls {
   my $self = shift;
-  my ($song,$info,$count) = @_;  
+  my ($song,$info,$count,$mode) = @_;
 
   my $song_title = sprintf("%3d. %s", $count, $info->{title} || $song);
+
+  #this escaping is breaking mozilla! do we really need it here? -allen
   my $url = escape($song);
+  $url =~ s!\%2F!/!gi;
+  #my $url = $song;
+
+  warn $mode if DEBUG;
+
+  if($mode eq 'search'){
+	my $basedir = $self->r->dir_config('BaseDir');
+	$song =~ s!$basedir/!!;
+	warn $basedir if DEBUG;
+	warn $song if DEBUG;
+	warn $self->r->uri if DEBUG;
+	warn $song if DEBUG;
+  }
+
   (my $play = $url) =~ s/(\.[^.]+)?$/.m3u?play=1/;
-  
+
   my $controls = '';
   $controls .= checkbox(-name=>'file',-value=>$song,-label=>'') if $self->stream_ok;
   $controls  .= a({ -href=>$url, class => 'fetch' }, b('&nbsp;['.
@@ -1056,7 +1265,12 @@ sub read_directory {
 sub fetch_info {
   my $self = shift;
   my ($file,$type) = @_;
+
+  warn "0 $file $type" if DEBUG;
+
   return unless $self->supported_type ($type);
+
+  warn "1 $file $type" if DEBUG;
 
   if (!$self->read_mp3_info) {  # don't read config info
     my $f = basename($file,$self->suffixes());
@@ -1068,6 +1282,8 @@ sub fetch_info {
 
   my %data = $self->read_cache($file);
 
+  warn "2 $file $type" if DEBUG;
+
   unless (%data and keys(%data) == keys(%FORMAT_FIELDS)) {
     my $handler = $self->supported_type ($type);
     $self->$handler($file,\%data);
@@ -1077,11 +1293,15 @@ sub fetch_info {
     $self->write_cache($file => \%data);
   }
 
+  warn "3 $file $type" if DEBUG;
+
   if (my $blank = $self->missing_comment) {
     foreach (qw(artist duration genre album track)) {
       $data{$_} ||= $blank;
     }
   }
+
+  warn "4 $file $type" if DEBUG;
 
   $data{description} = $self->description(\%data);
   return \%data;
@@ -1115,20 +1335,21 @@ sub read_mpeg {
       close INDEX;
   }
 
+  #THESE ARE ALPHABETIZED.  KEEP THEM IN ORDER!
   %$data =(
-	   title        => $title || '',
+	   album        => $album || ''    ,
 	   artist       => $artist || ''   ,
+	   bitrate      => $info->{BITRATE},
+	   comment      => $comment || '',
 	   duration     => $duration || '' ,
 	   genre        => $genre || ''    ,
-	   album        => $album || ''    ,
-	   comment      => $comment || '',
-	   year         => $year || '',
 	   min          => $info->{MM},
+	   samplerate   => $info->{FREQUENCY},
 	   sec          => $info->{SS},
 	   seconds      => $seconds,
+	   title        => $title || '',
 	   track        => $track || '',
-	   bitrate      => $info->{BITRATE},
-	   samplerate   => $info->{FREQUENCY},
+	   year         => $year || '',
 	  );
 }
 
@@ -1148,20 +1369,22 @@ sub read_vorbis {
   # whether the fields are required to be case sensitive.  The patch
   # submitted by Devi Carraway used lower case, but is that  right
   # in general?
+
+  #THESE ARE ALPHABETIZED.  KEEP THEM IN ORDER!
   %$data = (
-	    title => $comments->{title}     || $comments->{TITLE}   || '',
+	    album => $comments->{album}     || $comments->{ALBUM}   || '',
 	    artist => $comments->{artist}   || $comments->{ARTIST}  || '',
+	    bitrate => $ogg->bitrate/1000,
+	    comment => $comments->{comment} || $comments->{COMMENT} || '',
 	    duration => sprintf("%d:%2.2d", int($sec/60), $sec%60),
 	    genre => $comments->{genre}     || $comments->{GENRE}   || '',
-	    album => $comments->{album}     || $comments->{ALBUM}   || '',
-	    comment => $comments->{comment} || $comments->{COMMENT} || '',
-	    year => $comments->{year}       || $comments->{YEAR}    || '',
-	    track => $comments->{tracknumber} || $comments->{TRACKNUMBER} || '',
-	    bitrate => $ogg->bitrate/1000,
-	    samplerate => $info->rate,
-	    seconds => $sec,
 	    min => int $sec/60,
+	    samplerate => $info->rate,
 	    sec => $sec%60,
+	    seconds => $sec,
+	    title => $comments->{title}     || $comments->{TITLE}   || '',
+	    track => $comments->{tracknumber} || $comments->{TRACKNUMBER} || '',
+	    year => $comments->{year}       || $comments->{YEAR}    || '',
 	   );
   close $oggfh;
 }
@@ -1174,20 +1397,22 @@ sub read_wav {
   my $comments = $reader->get_info() || {};
   my $details  = $reader->details()  || {};
   my $sec = $reader->length_seconds;
+
+  #THESE ARE ALPHABETIZED.  KEEP THEM IN ORDER!
   %$data = (
-	    title  => $comments->{title}  || $comments->{TITLE}  || '',
-	    artist => $comments->{artist} || $comments->{ARTIST} || '',
 	    album  => $comments->{album}  || $comments->{ALBUM}  || '',
-	    year   => $comments->{year}   || $comments->{YEAR}   || '',
-	    genre  => $comments->{genre}  || $comments->{GENRE}  || '',
-	    track  => $comments->{tracknumber} || $comments->{TRACKNUMBER} || '',
+	    artist => $comments->{artist} || $comments->{ARTIST} || '',
+	    bitrate     => int($details->{bytes_sec}*8/1024),
 	    comment => $comments->{comment} || $comments->{COMMENT} || '',
+	    duration    => sprintf("%d:%2.2d", int $sec/60,$sec%60),
+	    genre  => $comments->{genre}  || $comments->{GENRE}  || '',
 	    min         => int $sec/60,
+	    samplerate  => $details->{sample_rate},
 	    sec         => $sec %60,
 	    seconds     => $sec,
-	    bitrate     => int($details->{bytes_sec}*8/1024),
-	    samplerate  => $details->{sample_rate},
-	    duration    => sprintf("%d:%2.2d", int $sec/60,$sec%60),
+	    title  => $comments->{title}  || $comments->{TITLE}  || '',
+	    track  => $comments->{tracknumber} || $comments->{TRACKNUMBER} || '',
+	    year   => $comments->{year}   || $comments->{YEAR}   || '',
 	   )
 }
 
@@ -1395,7 +1620,7 @@ sub home_label {
 }
 
 sub path_style {  # style for the path to parent directories
-  lc(shift->r->dir_config('PathStyle')) || 'staircase';
+  lc(shift->r->dir_config('PathStyle')) || 'arrows';
 }
 
 # where is our cache directory (if any)
