@@ -1290,8 +1290,6 @@ sub create_searchcache {
   return unless my $cache = $self->cache_dir;
   my $cache_file = $cache.'/search';
 
-  return if -e $cache_file;
-
   warn "precaching: $dirname" if DEBUG;
 
   opendir(D,$dirname);
