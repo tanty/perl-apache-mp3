@@ -100,7 +100,9 @@ sub new {
     {
      # type                 condition                     handler method
      'audio/mpeg'        => eval "use MP3::Info; 1;"   && 'read_mpeg',
-     'application/x-ogg' => eval "use Ogg::Vorbis; 1;" && 'read_vorbis',
+     'application/x-ogg' => eval "use Ogg::Vorbis; 1;" && 'read_vorbis_ogg' ||
+                            eval "use Ogg::Vorbis::Header::PurePerl; 1;" 
+                                                       && 'read_vorbis_hp',
      'audio/x-wav'       => eval "use Audio::Wav; 1;"  && 'read_wav'
     };
 
@@ -1518,7 +1520,7 @@ sub read_mpeg {
 	  );
 }
 
-sub read_vorbis {
+sub read_vorbis_ogg {
   my $self = shift;
   my ($file,$data) = @_;
 
@@ -1552,6 +1554,52 @@ sub read_vorbis {
 	    year => $comments->{year}       || $comments->{YEAR}    || '',
 	   );
   close $oggfh;
+}
+
+{
+
+  # Ogg::Vorbis::Header::PurePerl has a clumsy interface for getting
+  # comments.  We fix it up as a simple hash.
+  my $_comments = sub {
+    my($self) = shift;
+    my %comments = ();
+
+    foreach my $comment ($self->comment_tags) {
+      $comments{$comment} = join '', $self->comment($comment);
+    }
+
+    return \%comments;
+  };
+
+  sub read_vorbis_hp {
+    my $self = shift;
+    my ($file,$data) = @_;
+
+    my $ogg = Ogg::Vorbis::Header::PurePerl->load($file) or return;
+    my $comments = $ogg->$_comments;
+    my $info = $ogg->info;
+    my $sec = int $info->{length};
+
+    #THESE ARE ALPHABETIZED.  KEEP THEM IN ORDER!
+    %$data = (
+              album => $comments->{album}     || $comments->{ALBUM}   || '',
+              artist => $comments->{artist}   || $comments->{ARTIST}  || '',
+              bitrate => int $info->{bitrate_nominal}/1000,
+              comment => $comments->{comment} || $comments->{COMMENT} || '',
+              duration => sprintf("%d:%2.2d", int($sec/60), $sec%60),
+              genre => $comments->{genre}     || $comments->{GENRE}   || '',
+              min => int $sec/60,
+              samplerate => $info->{rate},
+              sec => $sec%60,
+              seconds => $sec,
+              title => $comments->{title}     || $comments->{TITLE}   || '',
+              track => $comments->{tracknumber} || $comments->{TRACKNUMBER} || '',
+              year => $comments->{year}       || $comments->{YEAR}    || '',
+             );
+
+    return;
+  }
+
 }
 
 sub read_wav {
