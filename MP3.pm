@@ -11,7 +11,7 @@ use CGI::Carp 'fatalsToBrowser';
 
 use File::Basename 'dirname','basename';
 use File::Path;
-use vars qw($VERSION $CACHED $SEARCH);
+use vars qw($VERSION $CACHED %SEARCH);
 
 $VERSION = '3.03';
 my $CRLF = "\015\012";
@@ -92,6 +92,8 @@ sub new {
   if( ( !$new->r->dir_config('DisableSearch') ) && !$CACHED){
 	
 	#this gets the system path of the Apache::MP3 root directory 'BaseDir'
+	#it is very slow for large mp3 collections.  is there a better way to
+    #do this?
     my $uri = $new->r->lookup_file($new->r->lookup_uri( $new->r->dir_config('BaseDir') )->filename)->filename;
 	$new->precache($uri,$uri);
 	$CACHED = 1;
@@ -146,9 +148,9 @@ sub precache {
 	my $searchdir = $dirname;
 	$searchdir =~ s/^$baseuri/$basedir/;
 
-	$SEARCH->{"$searchdir/$dirent"} = $data if $data;
+	$SEARCH{"$searchdir/$dirent"} = $data if $data;
 
-	warn join " ", keys %$SEARCH if DEBUG;
+	warn join " ", keys %SEARCH if DEBUG;
   }
 }
 
@@ -242,7 +244,10 @@ sub run {
   return $self->help_screen if param('help_screen');
 
   # generate search results from params 'search_category' and 'search_string'
-  return $self->process_search(param('search_category'),param('search_string'))
+  return $self->process_search(param('search_category'),
+							   param('search_string'),
+							   param('search_mode'),
+							  )
 	if param('search_category') and param('search_string');
 
   # generate directory listing
@@ -318,29 +323,16 @@ sub run {
 
 #this generates a list of files matching the search criteria
 sub process_search {
-  my $self = shift;
-  my $category = shift;
-  my $query = shift;
+  my $self     = shift;
+  my $category = shift;         #the type of metadata query should match
+  my $query    = shift;         #the query string to match
+  my $search_mode = shift;      #return results as XML for m2m3u
   my $dir = $self->r->filename;
   my $original_query = $query;
   $query =~ s/\*/\.*/g; #so that wildcard *s can be used in searches
   $query = '.*'.$query.'.*';
 
-  $self->r->send_http_header( $self->html_content_type );
   return OK if $self->r->header_only;
-
-  print start_html(
-				   -lang => $self->lh->language_tag,
-				   -title => $self->x('Search Results'),
-				   -dir => $self->lh->direction,
-				   -head => meta({-http_equiv => 'Content-Type',
-								  -content    => 'text/html; charset='
-								  . $self->html_content_type
-								 }),
-				  );
-
-  $self->page_top($dir);
-  $self->directory_top($dir);
 
   #these are the data keys:
   #track description min title album filename year duration bitrate artist samplerate comment genre seconds sec
@@ -351,42 +343,55 @@ sub process_search {
 				   style  => 'genre',
 				  );
 
-
-#  print h1('category: ',$category);
-
   if(DEBUG){
-	foreach my $file (keys %$SEARCH){
-	  print join " ", keys %{$SEARCH->{$file}}, br;
+	foreach my $file (keys %SEARCH){
+	  print join " ", keys %{$SEARCH{$file}}, br;
 	}
   }
 
   my $RESULTS = {};
 
-  foreach my $file ( keys %$SEARCH ){
+  foreach my $file ( keys %SEARCH ){
 	if( $category eq 'file' && basename($file) =~ /^$query$/i ){
-      $RESULTS->{$file} = $SEARCH->{$file};
+      $RESULTS->{$file} = $SEARCH{$file};
 	}
-	elsif( $SEARCH->{$file}->{$translate{$category}} =~ /^$query$/i ){
-      $RESULTS->{$file} = $SEARCH->{$file};
+	elsif( $SEARCH{$file}->{$translate{$category}} =~ /^$query$/i ){
+      $RESULTS->{$file} = $SEARCH{$file};
 	}
   }
 
-  print center("$category \"".$original_query."\" ($query) matched ".scalar(keys(%$RESULTS))." files");
-  $self->list_mp3s( $RESULTS ,'search');
+  if($search_mode eq 'm2m3u'){ #XML for m2m3u
+    my $uri = dirname($self->r->uri);
+    $uri =~ s!/?search/?!/!;
+    $self->send_playlist([map { "$uri/$_" } keys %$RESULTS]);
 
-  #<DEBUG>
-  #  print h1($self->r->filename);
-  #  print h1( $self->r->lookup_uri($self->r->dir_config('BaseDir'))->filename );
-  #  print h1( $self->r->lookup_file($self->r->lookup_uri($self->r->dir_config('BaseDir'))->filename) );
-  #  print h1( $self->r->lookup_file($self->r->lookup_uri( $self->r->dir_config('BaseDir') )->filename)->content_type );
-  #  print h1( $self->r->lookup_file($self->r->lookup_uri( $self->r->dir_config('BaseDir') )->filename)->filename );
-  #</DEBUG>
 
-  #http://localhost/mp3/playlist.m3u?file=wave/09.%20Antigua.Mp3;Play%20Selected=Play%Selected
+	
+  } else { #HTML as default
+	$self->r->send_http_header( $self->html_content_type );
+	print start_html(
+					 -lang => $self->lh->language_tag,
+					 -title => $self->x('Search Results'),
+					 -dir => $self->lh->direction,
+					 -head => meta({-http_equiv => 'Content-Type',
+									-content    => 'text/html; charset='
+									. $self->html_content_type
+								   }),
+					);
 
-  $self->directory_bottom($dir);
+	$self->page_top($dir);
+	$self->directory_top($dir);
 
-  print "\n", end_html();
+	print center("$category \"".$original_query."\" ($query) matched ".scalar(keys(%$RESULTS))." files");
+	$self->list_mp3s( $RESULTS ,'search');
+
+	#http://localhost/mp3/playlist.m3u?file=wave/09.%20Antigua.Mp3;Play%20Selected=Play%Selected
+
+	$self->directory_bottom($dir);
+
+	print "\n", end_html();
+  }
+
   return;
 }
 
@@ -520,7 +525,7 @@ sub find_mp3s {
 
 #changing this so that it is possible to find mp3s from search page
 #  my $uri = dirname($self->r->uri);
-  my $uri = dirname(shift);
+  my $uri = dirname(shift || $self->r->uri);
 
   my $dir = dirname($self->r->filename);
 
