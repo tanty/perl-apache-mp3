@@ -8,6 +8,7 @@ BEGIN {
   require Apache::compat if $mod_perl::VERSION >= 1.99;
 }
 
+use Apache;
 use Apache::Constants qw(:common REDIRECT HTTP_NO_CONTENT DIR_MAGIC_TYPE HTTP_NOT_MODIFIED);
 use Apache::MP3::L10N;
 use IO::File;
