@@ -10,7 +10,7 @@ use File::Basename 'dirname','basename';
 use File::Path;
 use vars qw($VERSION);
 
-$VERSION = '2.24';
+$VERSION = '2.25';
 my $CRLF = "\015\012";
 
 # defaults:
@@ -1160,9 +1160,8 @@ sub cd_list_icon  {
   my $subdir = shift;
   my $image = $self->r->dir_config('CoverImageSmall') || COVERIMAGESMALL;
   my $directory_specific_icon = $self->r->filename."/$subdir/$image";
-warn $directory_specific_icon;
   return -e $directory_specific_icon 
-    ? $self->r->uri . "/$subdir/$image"
+    ? $self->r->uri . sprintf("/%s/%s", escape($subdir), $image)
     : $self->get_dir('DirectoryIcon',CDLISTICON);
 }
 sub playlist_icon {

@@ -1,4 +1,6 @@
-2.25 ????
+2.25 Tue Apr  9 12:35:44 EDT 2002
+	- Added patch from Clemens Schrimpe to handle diacritical marks in
+		CD icon names.
 	- Added patch from John Regehr to get CDDB information from an 
 	external index file, if present.
         - Put warning in the error_log if PerlSetupEnv has been set to off
