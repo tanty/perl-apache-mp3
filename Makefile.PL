@@ -12,7 +12,8 @@ WriteMakefile(
 			    MP3::Info  => 0.8,
 			    Apache     => 1.14,
 			    Audio::Wav => 0.02,
-			    Ogg::Vorbis =>0.02,
+			    Ogg::Vorbis::Header =>0.02, #b/c Ogg::Vorbis can't be found by CPAN shell
+			    Inline::MakeMaker => 0.01,  #required by Ogg::Vorbis, but not specified in it's makefile, causing CPAN shell install to fail.
 			    Locale::Maketext => 1.03,
 			   }, # e.g., Module::Name => 1.1
 );
