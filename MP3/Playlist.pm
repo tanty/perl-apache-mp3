@@ -110,18 +110,18 @@ sub directory_bottom {
       table({-width=>'100%',-border=>1},
 	    Tr({-class=>'playlist'},
 	       td({-class=>'playlist'},
-		  h3('Current Playlist'),
+		  h3($self->x('Current Playlist')),
 		  start_form(-action=>"${uri}playlist.m3u",-method=>'GET'),
 		  checkbox_group(-class=>'playlist',
 				 -name      => 'file',
 				 -linebreak => 1,
 				 -value     => \@ok,
 				 -labels    => $descriptions),
-		  submit(-name=>'Clear All'),
-		  submit(-class=>'playlist',-name=>'Clear Selected'),
-		  submit(-class=>'playlist',-name=>'Play Selected'),
-		  submit(-class=>'playlist',-name=>'Shuffle All'),
-		  submit(-class=>'playlist',-name=>'Play All'),
+		  submit(-name=>'Clear All',-value=>$self->x('Clear All')),
+		  submit(-class=>'playlist',-name=>'Clear Selected',-value=>$self->x('Clear Selected')),
+		  submit(-class=>'playlist',-name=>'Play Selected',-value=>$self->x('Play Selected')),
+		  submit(-class=>'playlist',-name=>'Shuffle All',-value=>$self->x('Shuffle All')),
+		  submit(-class=>'playlist',-name=>'Play All',-value=>$self->x('Play All')),
 		  hidden(-name=>'playlist',-value=>1,-override=>1),
 		  end_form(),
 		  ))
@@ -173,9 +173,9 @@ sub directory_top {
   $self->SUPER::directory_top(@_);
   my @p = $self->playlist;
   print div({-align=>'CENTER'},
-	    a({-href=>'#playlist',-class=>'playlist'},'Playlist contains',scalar(@p),'songs.'),br,
+	    a({-href=>'#playlist',-class=>'playlist'},$self->x('Playlist contains [quant,_1,song,songs].', scalar(@p))),br,
 	    $self->{possibly_truncated} ? font({-color=>'red'},
-					       strong('Your playlist is now full. No more songs can be added.')) : '') 
+					       strong($self->x('Your playlist is now full. No more songs can be added.'))) : '') 
     if @p;
 }
 
