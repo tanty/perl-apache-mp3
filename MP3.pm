@@ -222,11 +222,14 @@ sub run {
   return $self->help_screen if param('help_screen');
 
   # generate search results from params 'search_category' and 'search_string'
-  return $self->process_search(param('search_category'),
-							   param('search_string'),
-							   param('search_mode'),
-							  )
-	if param('search_category') and param('search_string');
+  if(param('search_category') and param('search_string')){
+	my @queries = param('search_string');
+
+	return $self->process_search(param('search_category'),
+								 param('search_mode') || 'html',
+								 \@queries,
+								);
+  }
 
   # generate directory listing
   return $self->process_directory($r->filename)
@@ -311,14 +314,11 @@ sub run {
 
 #this generates a list of files matching the search criteria
 sub process_search {
-  my $self     = shift;
-  my $category = shift;         #the type of metadata query should match
-  my $query    = shift;         #the query string to match
+  my $self        = shift;
+  my $category    = shift;      #the type of metadata query should match
   my $search_mode = shift;      #return results as XML for m2m3u
+  my $queries     = shift;      #the query strings to match
   my $dir = $self->r->filename;
-  my $original_query = $query;
-  $query =~ s/\*/\.*/g; #so that wildcard *s can be used in searches
-  $query = '.*'.$query.'.*';
 
   return OK if $self->r->header_only;
 
@@ -331,30 +331,38 @@ sub process_search {
 				   style  => 'genre',
 				  );
 
-  if(DEBUG){
-	foreach my $file (keys %SEARCH){
-	  print join " ", keys %{$SEARCH{$file}}, br;
-	}
-  }
-
   my $RESULTS = {};
 
-  foreach my $file ( keys %SEARCH ){
-	if( $category eq 'file' && basename($file) =~ /^$query$/i ){
-      $RESULTS->{$file} = $SEARCH{$file};
+  foreach my $query (@$queries){
+	my $original_query = $query;
+	$query =~ s/\*/\.*/g; #so that wildcard *s can be used in searches
+	$query = '.*'.$query.'.*';
+
+	if(DEBUG){
+	  foreach my $file (keys %SEARCH){
+		print join " ", keys %{$SEARCH{$file}}, br;
+	  }
 	}
-	elsif( $SEARCH{$file}->{$translate{$category}} =~ /^$query$/i ){
-      $RESULTS->{$file} = $SEARCH{$file};
+
+	foreach my $file ( keys %SEARCH ){
+	  if( $category eq 'file' && basename($file) =~ /^$query$/i ){
+		$RESULTS->{$file} = $SEARCH{$file};
+	  }
+	  elsif( $SEARCH{$file}->{$translate{$category}} =~ /^$query$/i ){
+		$RESULTS->{$file} = $SEARCH{$file};
+	  }
 	}
+	#http://localhost/mp3/playlist.m3u?file=wave/09.%20Antigua.Mp3;Play%20Selected=Play%Selected
   }
 
-  if($search_mode eq 'm2m3u'){ #XML for m2m3u
-    my $uri = dirname($self->r->uri);
-    $uri =~ s!/?search/?!/!;
-    $self->send_playlist([map { "$uri/$_" } keys %$RESULTS]);
-	
+  if($search_mode eq 'm2m3u'){ #M3U for m2m3u
+	$self->send_playlist([keys %$RESULTS]);
+
   } else { #HTML as default
 	$self->r->send_http_header( $self->html_content_type );
+
+	my $original_query = $queries->[0];  #no display of multiple queries for HTML results
+
 	print start_html(
 					 -lang => $self->lh->language_tag,
 					 -title => $self->x('Search Results'),
@@ -373,13 +381,9 @@ sub process_search {
 	$self->page_top($dir);
 	$self->directory_top($dir);
 
-	print center("$category \"".$original_query."\" ($query) matched ".scalar(keys(%$RESULTS))." files");
+	print center("$category \"".$original_query."\" ($queries->[0]) matched ".scalar(keys(%$RESULTS))." files");
 	$self->list_mp3s( $RESULTS ,'search');
-
-	#http://localhost/mp3/playlist.m3u?file=wave/09.%20Antigua.Mp3;Play%20Selected=Play%Selected
-
 	$self->directory_bottom($dir);
-
 	print "\n", end_html();
   }
 
