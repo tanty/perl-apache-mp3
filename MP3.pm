@@ -1810,7 +1810,8 @@ sub cd_list_icon  {
   my $image = $self->r->dir_config('CoverImageSmall') || COVERIMAGESMALL;
   my $directory_specific_icon = $self->r->filename."/$subdir/$image";
   my $uri   = $self->r->uri;
-  my @components = $uri ? ($uri,escape($subdir),$image) : (escape($subdir),$image);
+#  my @components = $uri ? ($uri,escape($subdir),$image) : (escape($subdir),$image);
+  my @components = (escape($subdir),$image);
   return -e $directory_specific_icon 
     ? join ("/",@components)
     : $self->get_dir('DirectoryIcon',CDLISTICON);
