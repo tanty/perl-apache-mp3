@@ -857,19 +857,22 @@ sub subdir_list {
   my $cols = $self->subdir_columns;
   my $rows =  int(0.99 + @subdirs/$cols);
 
-  print start_center,
-        start_table({-border=>0,-width=>'95%'}),"\n";
+#  print start_center;
+  print start_table({-border=>0,-width=>'95%'}),"\n";
 
+#  my $i = 0; #index of subdir to render
   for (my $row=0; $row < $rows; $row++) {
-    print start_TR({-valign=>'BOTTOM'});
+    print start_TR({-valign=>'BOTTOM' -align=>'LEFT'});
     for (my $col=0; $col<$cols; $col++) {
       my $i = $col * $rows + $row;
       my $contents = $subdirs[$i] ? $self->format_subdir($subdirs[$i]) : '&nbsp;';
       print td($contents);
+#      $i++;
     }
     print end_TR,"\n";
   }
-  print end_table,end_center;
+  print end_table;
+#  print end_center;
 }
 
 # given a list of CD directories, sort them
@@ -933,8 +936,8 @@ sub playlist_list {
   my $cols = $self->playlist_columns;
   my $rows = int(0.99 + @$playlists / $cols);
 
-  print start_center,
-    start_table({-border => 0, -width => '95%'}), "\n";
+#  print start_center;
+   print start_table({-border => 0, -width => '95%'}), "\n";
 
   for(my $row = 0; $row < $rows; $row++) {
     print start_TR({-valign => 'BOTTOM'});
@@ -948,8 +951,8 @@ sub playlist_list {
     print end_TR, "\n";
   }
 
-  print end_table,
-    end_center;
+  print end_table;
+#  print end_center;
 }
 
 # format a playlist entry and return its HTML
@@ -998,8 +1001,8 @@ sub txtfile_list {
   my $cols = $self->playlist_columns;
   my $rows = int(0.99 + @$txtfiles / $cols);
 
-  print start_center,
-    start_table({-border => 0, -width => '95%'}), "\n";
+#  print start_center;
+   print start_table({-border => 0, -width => '95%'}), "\n";
 
   for(my $row = 0; $row < $rows; $row++) {
     print start_TR({-valign => 'BOTTOM'});
@@ -1011,8 +1014,8 @@ sub txtfile_list {
     print end_TR, "\n";
   }
 
-  print end_table,
-    end_center;
+  print end_table;
+#  print end_center;
 }
 
 # format a txtfile entry and return it's HTML
