@@ -102,13 +102,14 @@ sub new {
     {
      # type                 condition                     handler method
      'audio/mpeg'        => eval "use MP3::Info; 1;"   && 'read_mpeg',
+     'audio/mpeg4'       => eval "use MP4::Info; 1;"   && 'read_mpeg4',
      'application/x-ogg' => eval "use Ogg::Vorbis; 1;" && 'read_vorbis_ogg' ||
                             eval "use Ogg::Vorbis::Header::PurePerl; 1;" 
                                                        && 'read_vorbis_hp',
      'audio/x-wav'       => eval "use Audio::Wav; 1;"  && 'read_wav'
     };
 
-  $self->{'suffixes'} = [ qw(.ogg .OGG .wav .WAV .mp3 .MP3 .mpeg .MPEG)];
+  $self->{'suffixes'} = [ qw(.ogg .OGG .wav .WAV .mp3 .MP3 .mpeg .MPEG .m4a .mp4 .m4p)];
 
   # if the search function isn't disabled, we want to pre-cache the tag info
   # for searching.
@@ -1618,6 +1619,50 @@ sub read_mpeg {
 
   my $dir = dirname ($file);
   if (basename ($file) =~ /^track-([0-9]+).mp3$/ && open INDEX, "<$dir/INDEX") {
+      my $track_num = $1;
+      while (my $line = <INDEX>) {
+	  if ($line =~ /^DTITLE=(.+)$/) {
+	      ($artist, $album) = split /\//, $1;
+	  }
+ 	  if ($line =~ /^TTITLE([0-9]+)=(.+)$/ && $track_num == $1+1) {
+ 	      $title = $2;
+ 	  }
+      }
+      close INDEX;
+  }
+
+  #THESE ARE ALPHABETIZED.  KEEP THEM IN ORDER!
+  %$data =(
+	   album        => $album || ''    ,
+	   artist       => $artist || ''   ,
+	   bitrate      => $info->{BITRATE},
+	   comment      => $comment || '',
+	   duration     => $duration || '' ,
+	   genre        => $genre || ''    ,
+	   min          => $info->{MM},
+	   samplerate   => $info->{FREQUENCY},
+	   sec          => $info->{SS},
+	   seconds      => $seconds,
+	   title        => $title || '',
+	   track        => $track || '',
+	   year         => $year || '',
+	  );
+}
+
+sub read_mpeg4 {
+  my $self = shift;
+  my ($file,$data) = @_;
+
+  return unless my $info = get_mp4info($file);
+
+  my $tag  = get_mp4tag($file);
+  my ($title,$artist,$album,$year,$comment,$genre,$track) = 
+    @{$tag}{qw(TITLE ARTIST ALBUM YEAR COMMENT GENRE TRACKNUM)} if $tag;
+  my $duration = sprintf "%d:%2.2d", $info->{MM}, $info->{SS};
+  my $seconds  = ($info->{MM} * 60) + $info->{SS};
+
+  my $dir = dirname ($file);
+  if (basename ($file) =~ /^track-([0-9]+).m4a$/ && open INDEX, "<$dir/INDEX") {
       my $track_num = $1;
       while (my $line = <INDEX>) {
 	  if ($line =~ /^DTITLE=(.+)$/) {
