@@ -221,14 +221,12 @@ sub run {
       # find the MP3 file that corresponds to basename.m3u
       @matches = grep { m!/$basename[^/]*$! } @{$self->find_mp3s};
     }
-
-    if ($r->request($r->uri)->content_type eq 'audio/playlist'){
-      $self->send_playlist(\@matches);
-    }
-    elsif($r->request($r->uri)->content_type eq 'audio/x-scpls'){
+    if($r->request($r->uri)->content_type eq 'audio/x-scpls'){
       open(FILE,$r->filename) || return 404;
       $r->send_fd(\*FILE);
       close(FILE);
+    } else {
+      $self->send_playlist(\@matches);
     }
 
     return OK;
