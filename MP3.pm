@@ -20,7 +20,7 @@ use File::Basename 'dirname','basename';
 use File::Path;
 use vars qw($VERSION %SEARCH);
 
-$VERSION = '3.03';
+$VERSION = '3.04';
 my $CRLF = "\015\012";
 
 use constant DEBUG => 0;

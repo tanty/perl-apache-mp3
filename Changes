@@ -1,4 +1,7 @@
-3.04
+3.04 Fri Nov 29 16:33:29 EST 2002
+	-Fixed incorrect playlist port numbers when running in non-virtual
+		host, but using non-80 port.
+	-Added javascript functions for use with help pages.
 	-Chinese support from Autrijus Tang
 
 3.03 Sun Oct 13 23:21:00 EDT 2002
