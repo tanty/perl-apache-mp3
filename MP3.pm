@@ -13,7 +13,7 @@ use Apache::Constants qw(:common REDIRECT HTTP_NO_CONTENT DIR_MAGIC_TYPE HTTP_NO
 use Apache::MP3::L10N;
 use IO::File;
 use Socket 'sockaddr_in';
-use CGI qw/:standard escape *table *td *TR *blockquote *center center *h1/;
+use CGI qw/:standard *table *td *TR *blockquote *center center *h1/;
 use CGI::Carp 'fatalsToBrowser';
 
 use File::Basename 'dirname','basename';
@@ -110,15 +110,12 @@ sub new {
 
   # if the search function isn't disabled, we want to pre-cache the tag info
   # for searching.
-  if( !$self->r->dir_config('DisableSearch') ){
+  if ($self->searching_ok) {
 
 	return $self unless $self->cache_dir;
 	return if $self->cache_dir =~ m!/\.\./!;
 	return unless $self->cache_dir =~ m!^/.+$!;
 
-	#should we do the unlink in perl.startup?
-	#unlink $self->cache_dir . '/search';
-	
 	$self->load_searchcache;
 	warn "done caching!" if DEBUG;#. $self->is_cached;
   } else {
@@ -167,7 +164,7 @@ sub help_screen {
 				   -script =>[ {-language => 'JavaScript',
 								-code => $JSCRIPT},
 							   {-language => 'JavaScript',
-								-src => $self->r->dir_config('BaseDir').'/functions.js'}
+								-src => $self->default_dir.'/functions.js'}
 							 ],
 				  );
 
@@ -236,7 +233,7 @@ sub run {
   return $self->process_directory($r->filename)
     if -d $r->filename;  # should be $r->finfo, but STILL problems with this
 
-  #simple download of file
+  # simple download of file
   return $self->download_file($r->filename) unless param;
 
   # this is called to stream a file
@@ -313,6 +310,13 @@ sub run {
   return FORBIDDEN;
 }
 
+sub escape {
+  my $uri = CGI::escape(shift);
+  # unescape slashes so directories work right with mozilla
+  $uri =~ s!\%2F!/!gi;
+  return $uri;
+}
+
 #this generates a list of files matching the search criteria
 sub process_search {
   my $self        = shift;
@@ -326,13 +330,15 @@ sub process_search {
   #these are the data keys:
   #track description min title album filename year duration bitrate artist samplerate comment genre seconds sec
   my %translate = (
-				   artist => 'artist',
-				   album  => 'album',
-				   song   => 'title',
-				   style  => 'genre',
-				  );
+		   artist => 'artist',
+		   album  => 'album',
+                   song   => 'title',
+		   style  => 'genre',
+                   file   => 'filename',
+		  );
 
   my $RESULTS = {};
+  my $RESULTS_DIRS = {};
 
   foreach my $query (@$queries){
 	my $original_query = $query;
@@ -348,13 +354,18 @@ sub process_search {
 	foreach my $file ( keys %SEARCH ){
 	  if( $category eq 'file' && basename($file) =~ /^$query$/i ){
 		$RESULTS->{$file} = $SEARCH{$file};
+                $RESULTS_DIRS->{dirname($file)} = 1;
 	  }
 	  elsif( $SEARCH{$file}->{$translate{$category}} =~ /^$query$/i ){
 		$RESULTS->{$file} = $SEARCH{$file};
+                $RESULTS_DIRS->{dirname($file)} = 1;
 	  }
 	}
 	#http://localhost/mp3/playlist.m3u?file=wave/09.%20Antigua.Mp3;Play%20Selected=Play%Selected
   }
+
+  my @directories = keys %$RESULTS_DIRS;
+  my $directories = \@directories;
 
   if($search_mode eq 'm2m3u'){ #M3U for m2m3u
 	$self->send_playlist([keys %$RESULTS]);
@@ -375,14 +386,21 @@ sub process_search {
 					 -script =>[ {-language => 'JavaScript',
 								  -code => $JSCRIPT},
 								 {-language => 'JavaScript',
-								  -src => $self->r->dir_config('BaseDir').'/functions.js'}
+								  -src => $self->default_dir.'/functions.js'}
 							   ],
 					);
 
 	$self->page_top($dir);
 	$self->directory_top($dir);
 
-	print center("$category \"".$original_query."\" ($queries->[0]) matched ".scalar(keys(%$RESULTS))." files");
+	print center("$category \"".$original_query."\" ($queries->[0]) matched ".scalar(keys(%$RESULTS))." files in ".scalar(keys(%$RESULTS_DIRS))." dirs");
+
+        if(@$directories) {
+            print "\n<!-- begin subdirs -->\n";
+            $self->list_subdirs($directories);
+            print "\n<!-- end subdirs -->\n";
+        }
+        
 	$self->list_mp3s( $RESULTS ,'search');
 	$self->directory_bottom($dir);
 	print "\n", end_html();
@@ -667,7 +685,7 @@ sub page_top {
 				   -script =>[ {-language => 'JavaScript',
 								-code => $JSCRIPT},
 							   {-language => 'JavaScript',
-								-src => $self->r->dir_config('BaseDir').'/functions.js'}
+								-src => $self->default_dir.'/functions.js'}
 							 ],
   );
 }
@@ -688,6 +706,7 @@ sub directory_top {
   } else {
     $links = $self->generate_navpath_arrows($title);
   }
+  # FIXME - should fix so that Shuffle All and Play All work on search results pages?
   print a({-href=>'./playlist.m3u?Play+All+Recursive=1'},
 	  img({-src => $self->cd_icon($dir), $self->aleft, -alt=>
 	      $self->x('Stream All'),
@@ -717,8 +736,8 @@ sub directory_top {
 
   print end_td;
 
-  if(!$self->r->dir_config('DisableSearch')){
-	print td($self->display_searchform('1'));
+  if ($self->searching_ok) {
+    print td($self->display_searchform('1'));
   }
 
   print end_TR, end_table;
@@ -730,11 +749,11 @@ sub display_searchform {
   my $width = shift;
 
   my $uri = $self->r->uri;  # for self referencing
-  $uri =~ s!([^a-zA-Z0-9/])!uc sprintf("%%%02x",ord($1))!eg;
+  $uri =~ s!([^a-zA-Z0-9/_.\-])!uc sprintf("%%%02x",ord($1))!eg;
 
   my $form = "\n\n<!-- start searchform -->\n\n" . start_form(
 															  -name=>'search_form',
-															  -action=>$self->r->dir_config('BaseDir').'/search/?',
+															  -action=>$uri.'?',
 															  -method=>'GET'
 															 );
   $form .= table(TR(td(font({-size=>-1},'<nobr>',
@@ -860,7 +879,7 @@ sub subdir_list {
   my $rows =  int(0.99 + @subdirs/$cols);
 
 #  print start_center;
-  print start_table({-border=>0,-width=>'95%'}),"\n";
+  print start_table({-border=>0,-id=>'diroutertable'}),"\n";
 
   if($self->subdir_columns == 1){
 	print TR(td(b('Directory')),td(b('Play Options')),td(b('Last Accessed')),td(b('Last Modified')));
@@ -895,33 +914,40 @@ sub sort_subdirs {
 sub format_subdir {
   my $self = shift;
   my $subdir = shift;
-  my $nb = '&nbsp;';
-  (my $title = $subdir) =~ s/\s/$nb/og;  # replace whitespace with &nbsp;
-  my $result;
 
   my $subdirpath = $self->r->filename .'/'. $subdir;
+  # special handling if subdir is fully pathed
+  if (substr($subdir, -1) eq "/") {
+    chop $subdir;
+    $subdirpath = $self->r->lookup_uri($subdir)->filename;
+  }
+  my $nb = '&nbsp;';
+  (my $title = $subdir) =~ s/\s/$nb/og;  # replace whitespace with &nbsp;
+  $title =~ s!^.*(/[^/]+/[^/]+)$!...$1!;  # if dir is fully pathed, only keep 2 parts for title
+  my $uri = escape($subdir);
+  my $result;
 
   my($atime,$mtime) = (stat($subdirpath))[8,9];
 
   if($self->subdir_columns == 1){
 	$result = td(
-				 a({-href=>escape($subdir).'/playlist.m3u?Play+All+Recursive=1'},
+				 a({-href=>$uri.'/playlist.m3u?Play+All+Recursive=1'},
 				   img({-src=>$self->cd_list_icon($subdir),
 						-align=>'ABSMIDDLE',
 						-class=>'subdir',
 						-alt=>$self->x('Stream'),
 						-border=>0})),
-				 a({-href=>escape($subdir).'/'},font({-class=>'subdirectory'},$title))
+				 a({-href=>$uri.'/'},font({-class=>'subdirectory'},$title))
 				)
 	         .td(
 				 a({-class=>'subdirbuttons',
-					-href=>escape($subdir).'/playlist.m3u?Shuffle+All+Recursive=1'},
+					-href=>$uri.'/playlist.m3u?Shuffle+All+Recursive=1'},
 				   '[' .
 				   $self->x('Shuffle')
 				   .']')
 				 .$nb.
 				 a({-class=>'subdirbuttons',
-					-href=>escape($subdir).'/playlist.m3u?Play+All+Recursive=1'},
+					-href=>$uri.'/playlist.m3u?Play+All+Recursive=1'},
 				   '['.
 				   $self->x('Stream')
 				   .']')."\n"
@@ -933,27 +959,24 @@ sub format_subdir {
 				 scalar(localtime($mtime))
 				);
   } else {
-	$result = p(
-				a({-href=>escape($subdir).'/playlist.m3u?Play+All+Recursive=1'},
-				  img({-src=>$self->cd_list_icon($subdir),
-					   -align=>'ABSMIDDLE',
-					   -class=>'subdir',
-					   -alt=>$self->x('Stream'),
-					   -border=>0}))
-				.$nb.
-				a({-href=>escape($subdir).'/'},font({-class=>'subdirectory'},$title)),
-				br, "\n",
-				a({-class=>'subdirbuttons',
-				   -href=>escape($subdir).'/playlist.m3u?Shuffle+All+Recursive=1'},
-				  '[' .
-				  $self->x('Shuffle')
-				  .']')
-				.$nb.
-				a({-class=>'subdirbuttons',
-				   -href=>escape($subdir).'/playlist.m3u?Play+All+Recursive=1'},
-				  '['.
-				  $self->x('Stream')
-				  .']'))."\n";
+	$result = start_table({-border=>0,-alight=>'LEFT'}).start_TR().td(
+                  a({-href=>$uri.'/playlist.m3u?Play+All+Recursive=1'},
+		    img({-src=>$self->cd_list_icon($subdir),
+		         -align=>'LEFT',
+			 -class=>'subdir',
+			 -alt=>$self->x('Stream'),
+		         -border=>0}))
+                  ).td({-valign => 'CENTER', -align => 'LEFT'},
+	          a({-href=>$uri.'/'},font({-class=>'subdirectory'},$title)).
+	 	  br."\n".
+		  a({-class=>'subdirbuttons',
+		     -href=>$uri.'/playlist.m3u?Shuffle+All+Recursive=1'},
+		     '['.$self->x('Shuffle').']')
+		  .$nb.
+		  a({-class=>'subdirbuttons',
+		     -href=>$uri.'/playlist.m3u?Play+All+Recursive=1'},
+		     '['.$self->x('Stream').']')."\n"
+                  ).end_TR().end_table();
   }
 
   return $result;
@@ -1261,15 +1284,12 @@ sub format_song_controls {
   my $song_title = sprintf("%3d. %s", $count, $info->{title} || $song);
 
   my $url = escape($song);
-  #escaping seems to be breaking mozilla...
   #my $url = $song;
-  #unescape slashes so directories work right with mozilla
-  $url =~ s!\%2F!/!gi;
 
   warn $mode if DEBUG;
 
   if($mode eq 'search'){
-	my $basedir = $self->r->dir_config('BaseDir');
+	my $basedir = $self->r->location();
 	$song =~ s!$basedir/!!;
 #	#remove "search/" substr from the url
 #	$song =~ s!$mode/!!;
@@ -1280,6 +1300,7 @@ sub format_song_controls {
   }
 
   (my $play = $url) =~ s/(\.[^.]+)?$/.m3u?play=1/;
+  (my $urldir = $url) =~ s!/[^/]+$!/!;
 
   my $controls = '';
   $controls .= checkbox(-name=>'file',-value=>$song,-label=>'') if $self->stream_ok;
@@ -1293,18 +1314,19 @@ sub format_song_controls {
       .']'
      ))
     if $self->stream_ok;
+  $controls  .= a({-href=>$urldir},b('&nbsp;['.
+      $self->x('dir')
+      .']'
+     ))
+    if $mode eq 'search';
 
   return (
-	  p(
-	    $self->stream_ok ? a({-href=>$play},
-	                         img({-src => $self->song_icon,-alt =>
-	                             $self->x('stream'),
-	                              -border => 0}))
-	                     : img({-src => $self->song_icon})
-	   ),
-	  p(
-	    $controls
-	   )
+	  $self->stream_ok ? a({-href=>$play},
+	                       img({-src => $self->song_icon,-alt =>
+	                           $self->x('stream'),
+	                            -border => 0}))
+	                   : img({-src => $self->song_icon})
+	  , $controls
 	 );
 }
 
@@ -1312,9 +1334,9 @@ sub format_song_controls {
 sub format_song_fields {
   my $self = shift;
   my ($song,$info,$count) = @_;
-	  return map { $info->{lc $_}=~/^\d+$/ ? 
-                   p({$self->aright},$info->{lc($_)},'&nbsp;') : 
-                   p($info->{lc($_)} || '&nbsp;') } $self->fields;
+  return map { $info->{lc($_)}=~/^\d+$/ ? 
+    $info->{lc($_)} :   # Do NOT use p(), it makes the cells huge in some browsers.
+    ($info->{lc($_)} || '&nbsp;') } $self->fields;
 }
 
 # read a single directory, returning lists of subdirectories and MP3 files
@@ -1372,6 +1394,11 @@ sub fetch_info {
     # fill in missing fields
     $data{filename} ||= basename($file);
     $data{title}    ||= basename($file,$self->suffixes());
+
+    # Make sure that the data fields do not contain record seperator chars ($;) or newlines
+    foreach my $key (keys %data) {
+      $data{$key} =~ tr/\034\n/  /;
+    }
     $self->write_cache($file => \%data);
   }
 
@@ -1386,17 +1413,20 @@ sub fetch_info {
   return \%data;
 }
 
-#this creates a disk cache
+# this creates a disk cache for the search db
 sub create_searchcache {
   my $self = shift;
   my $dirname = shift;
   my $baseuri = shift;
-  my $basedir = $self->r->dir_config('BaseDir');
+  my $basedir = $self->r->location();
 
   return unless my $cache = $self->cache_dir;
   my $cache_file = $cache.'/search';
 
   warn "precaching: $dirname" if DEBUG;
+
+  my $cachedirname = dirname($cache_file);
+  -d $cachedirname || eval{mkpath($cachedirname)} || return;
 
   my $diruri = $dirname;
   $diruri =~ s/$baseuri/$basedir/;
@@ -1425,14 +1455,12 @@ sub create_searchcache {
 
 	next unless $data;
 
-	my $cachedirname = dirname($cache_file);
-	-d $cachedirname || eval{mkpath($cachedirname)} || return;
 	if (my $c = IO::File->new(">>$cache_file")) {
 
 	  #replace the file path with the real base uri
 #	  $dirname =~ s/$baseuri/$basedir/;
 
-warn "caching: $diruri";
+          warn "caching: $diruri/$dirent" if DEBUG;
 	  $data->{filepath} = $diruri;
 	  print $c join $;,%$data;
 	  print $c "\n";
@@ -1454,24 +1482,42 @@ sub load_searchcache {
 
   #if the cache file doesn't exist, we need to create it
   unless(-e $cache_file){
-	warn "no cache file $cache_file, better create it" if DEBUG;
-    my $basedir = $self->r->lookup_uri($self->r->dir_config('BaseDir'))->filename;
-	$self->create_searchcache($basedir,$basedir);
+    warn "no cache file $cache_file, better create it" if DEBUG;
+    my $basedir = $self->r->lookup_uri($self->r->location())->filename;
+    $self->create_searchcache($basedir,$basedir);
   }
 
   return unless my $c = IO::File->new($cache_file);
-  my ($data,$buffer);
-  while (read($c,$buffer,5000)) {
+  my $data = "";
+  my $buffer;
+  while (read($c,$buffer,4096)) {
     $data .= $buffer;
+    while ($data =~ s/^([^\n]*)\n//) {
+      my $entry = $1;
+      warn "parsing cache entries..." if DEBUG;
+      my %data = split $;,$entry;   # split into fields
+      $SEARCH{$data{filepath}.'/'.$data{filename}} = \%data;
+      # For memory use reasons, don't keep any data in the cache that isn't currently searchable
+      delete $data{filepath};
+      delete $data{filename};
+      delete $data{description};
+      delete $data{comment};
+      delete $data{duration};
+      delete $data{samplerate};
+      delete $data{bitrate};
+      delete $data{track};
+      delete $data{min};
+      delete $data{sec};
+      delete $data{seconds};
+      delete $data{year};
+    }
   }
   close $c;
 
-  my @entries = split /\n/, $data;
-  foreach my $entry (@entries){
-	warn "parsing cache entries..." if DEBUG;
-	my %data = split $;,$entry;   # split into fields
-	$SEARCH{$data{filepath}.'/'.$data{filename}} = \%data;
-  }
+  # Get the last entry
+  warn "parsing cache entries..." if DEBUG;
+  my %data = split $;,$data;   # split into fields
+  $SEARCH{$data{filepath}.'/'.$data{filename}} = \%data;
 }
 
 # these methods are called to read the MIME types specified in
@@ -1654,7 +1700,7 @@ sub read_cache {
   return unless -e $cache_file && -M $cache_file <= $file_age;
   return unless my $c = IO::File->new($cache_file);
   my ($data,$buffer);
-  while (read($c,$buffer,5000)) {
+  while (read($c,$buffer,4096)) {
     $data .= $buffer;
   }
   close $c;
@@ -1797,6 +1843,12 @@ sub playlocal_ok {
   shift->r->dir_config('AllowPlayLocally') =~ /$YES/oi;
 }
 
+# return true if searching is allowed and configured
+sub searching_ok {
+  my $self = shift;
+  return !$self->r->dir_config('DisableSearch');
+}
+
 # return true if we should check that the client can accomodate streaming
 sub check_stream_client {
   shift->r->dir_config('CheckStreamClient') =~ /$YES/oi;
@@ -1834,7 +1886,7 @@ sub home_label {
 }
 
 sub path_style {  # style for the path to parent directories
-  lc(shift->r->dir_config('PathStyle')) || 'arrows';
+  lc(shift->r->dir_config('PathStyle')) || 'staircase';
 }
 
 # where is our cache directory (if any)
@@ -1856,12 +1908,17 @@ sub cd_list_icon  {
   my $self   = shift;
   my $subdir = shift;
   my $image = $self->r->dir_config('CoverImageSmall') || COVERIMAGESMALL;
-  my $directory_specific_icon = $self->r->filename."/$subdir/$image";
-  my $uri   = $self->r->uri;
-#  my @components = $uri ? ($uri,escape($subdir),$image) : (escape($subdir),$image);
-  my @components = (escape($subdir),$image);
+  my $directory_specific_icon = $self->r->filename."/$subdir";
+  my $uri = escape($subdir)."/$image";
+
+  # override the icon filename if the dir is fully pathed
+  if (substr($subdir, 0, 1) eq "/") {
+    $directory_specific_icon = $self->r->lookup_uri($subdir)->filename;
+  }
+  $directory_specific_icon .= "/$image";
+  
   return -e $directory_specific_icon 
-    ? join ("/",@components)
+    ? $uri
     : $self->get_dir('DirectoryIcon',CDLISTICON);
 }
 sub playlist_icon {
@@ -1878,7 +1935,6 @@ sub arrow_icon    { shift->get_dir('ArrowIcon',ARROWICON)        }
 
 sub help_url      { shift->get_dir('HelpURL',   HELPIMGURL)  }
 sub help_img_url  { shift->get_dir('HelpImgURL',HELPIMGURL)  }
-
 
 sub cd_icon {
   my $self = shift;
@@ -2149,7 +2205,7 @@ example:
   Simon and Garfunkel/Simon And Garfunkel - April Come She Will.mp3
 
 Likewise, if you place a list of shoutcast URLs into a file with the
-.pls extension, it will be treated as a playlist and displayed to the
+pls extension, it will be treated as a playlist and displayed to the
 user with a distinctive icon.  Selecting the playlist icon will
 contact the shoutcast servers in the playlist and stream their
 contents.  The playlist syntax is as in this example:
@@ -2199,7 +2255,7 @@ add a configuration variable like the following to the Apache::MP3
  PerlSetVar  DisableSearch  1
 
 Currently Apache::MP3 searching is not configurable and is hard-coded
-to allow you to search for artists, song names, genres, and albums.
+to allow you to search for artists, song names, genres, albums, and files.
 The searchbox is also hard-coded to appear in the upper right corner
 of the page.  Contributions are welcome that will allow this feature
 to be customizable.
