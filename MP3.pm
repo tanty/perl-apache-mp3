@@ -1211,8 +1211,6 @@ sub stream_base {
   my $self = shift;
   my $suppress_auth = shift;
   my $r = $self->r;
-  my $basename = $r->dir_config('StreamBase');
-  return $basename if $basename;
 
   my $auth_info;
   # the check for auth_name() prevents an annoying message in
@@ -1225,10 +1223,14 @@ sub stream_base {
     }
   }
 
+  if (my $basename = $r->dir_config('StreamBase')) {
+    $basename =~ s!http://!http://$auth_info! if $auth_info;
+    return $basename;
+  }
+
   my $vhost = $r->hostname || $r->server->server_hostname;
   $vhost .= ':' . $r->get_server_port unless $r->get_server_port == 80;
-  $basename = "http://${auth_info}${vhost}";
-  return $basename;
+  return "http://${auth_info}${vhost}";
 }
 
 
