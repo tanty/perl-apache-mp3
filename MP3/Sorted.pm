@@ -98,11 +98,15 @@ sub mp3_table_header {
 
   foreach ($self->fields) {
     my $sort = param('sort') eq lc($_)  ? lc("-$_") : lc($_);
-    push @fields,a({-href=>"?sort=$sort"},ucfirst($_));
+    push @fields,a({-href=>"?sort=$sort"},
+      $self->x(ucfirst($_))
+    );
   }
 
-  print TR({-class=>'title',-align=>'LEFT'},
-	   th({-colspan=>2,-align=>'CENTER'},p($self->stream_ok ? 'Select' : '')),
+  print TR({-class=>'title',$self->aleft},
+	   th({-colspan=>2,-align=>'CENTER'},p($self->stream_ok ?
+	     $self->x('Select') : ''
+	   )),
 	   th(\@fields)),"\n";
 }
 
