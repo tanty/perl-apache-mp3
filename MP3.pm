@@ -860,13 +860,20 @@ sub subdir_list {
 #  print start_center;
   print start_table({-border=>0,-width=>'95%'}),"\n";
 
+  if($self->subdir_columns == 1){
+	print TR(td(b('Directory')),td(b('Play Options')),td(b('Last Accessed')),td(b('Last Modified')));
+  }
+
 #  my $i = 0; #index of subdir to render
   for (my $row=0; $row < $rows; $row++) {
     print start_TR({-valign=>'BOTTOM' -align=>'LEFT'});
     for (my $col=0; $col<$cols; $col++) {
       my $i = $col * $rows + $row;
       my $contents = $subdirs[$i] ? $self->format_subdir($subdirs[$i]) : '&nbsp;';
-      print td($contents);
+
+	  #only assume wrap in td() if multiple columns.  should td() be moved to format_subdir() ?
+      print $self->subdir_columns == 1 ? $contents : td($contents);
+
 #      $i++;
     }
     print end_TR,"\n";
@@ -888,28 +895,65 @@ sub format_subdir {
   my $subdir = shift;
   my $nb = '&nbsp;';
   (my $title = $subdir) =~ s/\s/$nb/og;  # replace whitespace with &nbsp;
-  my $result = p(
-		 a({-href=>escape($subdir).'/playlist.m3u?Play+All+Recursive=1'},
-		   img({-src=>$self->cd_list_icon($subdir),
-			-align=>'ABSMIDDLE',
-			-class=>'subdir',
-			-alt=>
-			  $self->x('Stream'),
-			-border=>0}))
-		 .$nb.
-			  a({-href=>escape($subdir).'/'},font({-class=>'subdirectory'},$title)),
-		 br, "\n",
-		 a({-class=>'subdirbuttons',
-		    -href=>escape($subdir).'/playlist.m3u?Shuffle+All+Recursive=1'},
-		    '[' .
-		    $self->x('Shuffle')
-		    .']')
-		 .$nb.
-		 a({-class=>'subdirbuttons',
-		    -href=>escape($subdir).'/playlist.m3u?Play+All+Recursive=1'},
-		    '['.
-		    $self->x('Stream')
-		    .']'))."\n";
+  my $result;
+
+  my $subdirpath = $self->r->filename .'/'. $subdir;
+
+  my($atime,$mtime) = (stat($subdirpath))[8,9];
+
+  if($self->subdir_columns == 1){
+	$result = td(
+				 a({-href=>escape($subdir).'/playlist.m3u?Play+All+Recursive=1'},
+				   img({-src=>$self->cd_list_icon($subdir),
+						-align=>'ABSMIDDLE',
+						-class=>'subdir',
+						-alt=>$self->x('Stream'),
+						-border=>0})),
+				 a({-href=>escape($subdir).'/'},font({-class=>'subdirectory'},$title))
+				)
+	         .td(
+				 a({-class=>'subdirbuttons',
+					-href=>escape($subdir).'/playlist.m3u?Shuffle+All+Recursive=1'},
+				   '[' .
+				   $self->x('Shuffle')
+				   .']')
+				 .$nb.
+				 a({-class=>'subdirbuttons',
+					-href=>escape($subdir).'/playlist.m3u?Play+All+Recursive=1'},
+				   '['.
+				   $self->x('Stream')
+				   .']')."\n"
+				)
+			 .td(
+				 scalar(localtime($atime))
+				)
+			 .td(
+				 scalar(localtime($mtime))
+				);
+  } else {
+	$result = p(
+				a({-href=>escape($subdir).'/playlist.m3u?Play+All+Recursive=1'},
+				  img({-src=>$self->cd_list_icon($subdir),
+					   -align=>'ABSMIDDLE',
+					   -class=>'subdir',
+					   -alt=>$self->x('Stream'),
+					   -border=>0}))
+				.$nb.
+				a({-href=>escape($subdir).'/'},font({-class=>'subdirectory'},$title)),
+				br, "\n",
+				a({-class=>'subdirbuttons',
+				   -href=>escape($subdir).'/playlist.m3u?Shuffle+All+Recursive=1'},
+				  '[' .
+				  $self->x('Shuffle')
+				  .']')
+				.$nb.
+				a({-class=>'subdirbuttons',
+				   -href=>escape($subdir).'/playlist.m3u?Play+All+Recursive=1'},
+				  '['.
+				  $self->x('Stream')
+				  .']'))."\n";
+  }
+
   return $result;
 }
 
