@@ -852,6 +852,20 @@ sub read_mpeg {
   my $duration = sprintf "%dm %2.2ds", $info->{MM}, $info->{SS};
   my $seconds  = ($info->{MM} * 60) + $info->{SS};
 
+  my $dir = dirname ($file);
+  if (basename ($file) =~ /^track-([0-9]+).mp3$/ && open INDEX, "<$dir/INDEX") {
+      my $track_num = $1;
+      while (my $line = <INDEX>) {
+	  if ($line =~ /^DTITLE=(.+)$/) {
+	      ($artist, $album) = split /\//, $1;
+	  }
+ 	  if ($line =~ /^TTITLE([0-9]+)=(.+)$/ && $track_num == $1+1) {
+ 	      $title = $2;
+ 	  }
+      }
+      close INDEX;
+  }
+
   %$data =(
 	   title        => $title || '',
 	   artist       => $artist || ''   ,
@@ -1425,6 +1439,17 @@ contents.  The playlist syntax is as in this example:
   Title2=SmoothJazz
   Length2=-1
   Version=2
+
+Apache::MP3 permits you to directly use CDDB data without embedding it
+in ID3 tags.  To take advantage of this feature, your MP3 files should
+have file names of this form: track-XX.mp3.  Then, place a CDDB index
+file in the same directory as the tracks and name it INDEX.  For
+example, you might execute this command
+
+  cddbcmd cddb read soundtrack cb115c11 > INDEX
+
+to create an INDEX file for the Mulholland Drive soundtrack.  The
+32-bit disc ID can be obtained with a program such as cd-discid.
 
 =item 7. Set up an information cache directory (optional)
 
