@@ -63,6 +63,17 @@ my %FORMAT_FIELDS = (
 my $NO  = '^(no|false)$';  # regular expression
 my $YES = '^(yes|true)$';  # regular expression
 
+my $JSCRIPT=<<END;
+function toggleAll(self,field) {
+  if(self.checked == true){
+	for (i = 0; i < field.length; i++)
+	  field[i].checked = true ;
+  } else {
+	for (i = 0; i < field.length; i++)
+	  field[i].checked = false ;
+  }
+}
+END
 
 sub handler ($$) {
   my $class = shift;
@@ -144,14 +155,16 @@ sub help_screen {
   return OK if $self->r->header_only;
 
   print start_html(
-		   -lang => $self->lh->language_tag,
-		   -title => $self->x('Quick Help Summary'),
-		   -dir => $self->lh->direction,
-		   -head => meta({-http_equiv => 'Content-Type',
-				  -content    => 'text/html; charset='
-				  . $self->html_content_type
-				 }),
-		  );
+				   -lang => $self->lh->language_tag,
+				   -title => $self->x('Quick Help Summary'),
+				   -dir => $self->lh->direction,
+				   -head => meta({-http_equiv => 'Content-Type',
+								  -content    => 'text/html; charset='
+								  . $self->html_content_type
+								 }
+								),
+				   -script => $JSCRIPT,
+				  );
 
   my $help_img_url = $self->help_img_url;  # URL for the image
   my ($url,$width,$height) = $help_img_url=~/(.+):(\d+)x(\d+)/;
@@ -277,6 +290,16 @@ sub run {
     return OK;
   }
 
+  if (param('Shuffle Selected')) {
+    return HTTP_NO_CONTENT unless my @files = param('file');
+    my $uri = dirname($r->uri);
+    $uri =~ s!/?search/?!/!;
+	my $list = [map {"$uri/$_"} @files];
+	$self->shuffle($list);
+    $self->send_playlist($list);
+    return OK;
+  }
+
   # otherwise don't know how to deal with this
   $self->r->log_reason('Invalid parameters -- possible attempt to circumvent checks.');
   return FORBIDDEN;
@@ -336,6 +359,7 @@ sub process_search {
 									-content    => 'text/html; charset='
 									. $self->html_content_type
 								   }),
+					 -script => $JSCRIPT,
 					);
 
 	$self->page_top($dir);
@@ -626,7 +650,8 @@ sub page_top {
                   }),
     -lang  => $self->lh->language_tag,
     -dir => $self->lh->direction,
-    -style => {-src=>$self->stylesheet}
+    -style => {-src=>$self->stylesheet},
+	-script => $JSCRIPT,
   );
 }
 
@@ -1079,15 +1104,20 @@ sub control_buttons {
       $self->x('Play Selected'),
     );
 
-  $return .=
-    sprintf('<input type="submit" name="Shuffle All" value="%s" />',
-      $self->x('Shuffle All'),
-    ) unless $mode eq 'search';
+  $return .= 
+    sprintf('<input type="submit" name="Shuffle Selected" value="%s" />',
+			$self->x('Shuffle Selected'),
+    );
 
-  $return .=
-    sprintf('<input type="submit" name="Play All" value="%s" />',
-      $self->x('Play All'),
-    ) unless $mode eq 'search';
+#  $return .=
+#    sprintf('<input type="submit" name="Shuffle All" value="%s" />',
+#      $self->x('Shuffle All'),
+#    ) unless $mode eq 'search';
+
+#  $return .=
+#    sprintf('<input type="submit" name="Play All" value="%s" />',
+#      $self->x('Play All'),
+#    ) unless $mode eq 'search';
 
   return $return;
 }
@@ -1101,13 +1131,15 @@ sub mp3_table_header {
     } $self->fields;
   
   print TR({-class=>'title',$self->aleft,},
-	   th({-colspan=>2,-align=>'CENTER'},
-	      p($self->stream_ok ?
-	        $self->x('Select')
-	        : ''
-	       )
-	     ),
-	   th(\@fields)),"\n";
+		   th(),
+		   th(#{-colspan=>2,-align=>'LEFT'},
+			  p($self->stream_ok ?
+				checkbox(-onClick => 'toggleAll(this,document.form.file)') .
+				$self->x('Select')
+				: ''
+			   )
+			 ),
+		   th(\@fields)),"\n";
 }
 
 # bottom of MP3 file listing
@@ -2662,7 +2694,7 @@ study it alongside a representative HTML page:
                   <icon>[] [fetch][stream]  Boy Toy        168
 
              mp3_list_bottom()
-               [Play Selected] [Shuffle All] [Play All]
+               [Play Selected] [Shuffle Selected]
 
     directory_bottom()
  -------------------------  page bottom -----------------------------
