@@ -1286,11 +1286,15 @@ sub create_searchcache {
   my $self = shift;
   my $dirname = shift;
   my $baseuri = shift;
+  my $basedir = $self->r->dir_config('BaseDir');
 
   return unless my $cache = $self->cache_dir;
   my $cache_file = $cache.'/search';
 
   warn "precaching: $dirname" if DEBUG;
+
+  my $diruri = $dirname;
+  $diruri =~ s/$baseuri/$basedir/;
 
   opendir(D,$dirname);
   my @dirents = readdir(D);
@@ -1312,7 +1316,7 @@ sub create_searchcache {
 
 	next unless defined $file && defined $type;
 
-    my $data = $self->fetch_info($file,$type);
+	my $data = $self->fetch_info($file,$type);
 
 	next unless $data;
 
@@ -1321,12 +1325,13 @@ sub create_searchcache {
 	if (my $c = IO::File->new(">>$cache_file")) {
 
 	  #replace the file path with the real base uri
-	  my $basedir = $self->r->dir_config('BaseDir');
-	  $dirname =~ s/$baseuri/$basedir/;
+#	  $dirname =~ s/$baseuri/$basedir/;
 
-	  $data->{filepath} = $dirname;
+warn "caching: $diruri";
+	  $data->{filepath} = $diruri;
 	  print $c join $;,%$data;
 	  print $c "\n";
+	  $c->close;
 	}
   }
 }
