@@ -1440,7 +1440,6 @@ sub fetch_info {
   return \%data;
 }
 
-<<<<<<< MP3.pm
 sub _stats {
   my $self = shift;
   my $dirname = shift;
