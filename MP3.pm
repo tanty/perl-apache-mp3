@@ -9,7 +9,7 @@ BEGIN {
 }
 
 use Apache;
-use Apache::Constants qw(:common REDIRECT HTTP_NO_CONTENT DIR_MAGIC_TYPE HTTP_NOT_MODIFIED);
+use Apache::Constants qw(:common REDIRECT HTTP_NO_CONTENT HTTP_NOT_MODIFIED);
 use Apache::MP3::L10N;
 use IO::File;
 use Socket 'sockaddr_in';
@@ -24,6 +24,7 @@ use vars qw($VERSION %SEARCH);
 $VERSION = '3.05';
 my $CRLF = "\015\012";
 
+use constant DIR_MAGIC_TYPE => 'httpd/unix-directory';
 use constant DEBUG => 0;
 
 # defaults:
@@ -76,7 +77,7 @@ function toggleAll(self,field) {
 }
 END
 
-sub handler ($$) {
+sub handler : method {
   my $class = shift;
   my $obj = $class->new(@_) or die "Can't create object: $!";
   return $obj->run();
@@ -445,14 +446,14 @@ sub process_directory {
   my $self = shift;
   my $dir = shift;
 
-  unless ($self->r->path_info){
-    #Issue an external redirect if the dir isn't tailed with a '/'
-    my $uri = $self->r->uri;
-    my $query = $self->r->args;
-    $query = "?" . $query if defined $query;
-    $self->r->header_out(Location => "$uri/$query");
-    return REDIRECT;
-  }
+#   unless ($self->r->path_info){
+#     #Issue an external redirect if the dir isn't tailed with a '/'
+#     my $uri = $self->r->uri;
+#     my $query = $self->r->args;
+#     $query = "?" . $query if defined $query;
+#     $self->r->header_out(Location => "$uri/$query");
+#     return REDIRECT;
+#   }
 
   return $self->list_directory($dir);
 }
