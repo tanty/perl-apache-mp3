@@ -2,6 +2,12 @@ package Apache::MP3;
 # $Id$
 
 use strict;
+
+BEGIN {
+  require mod_perl;
+  require Apache::compat if $mod_perl::VERSION >= 1.99;
+}
+
 use Apache::Constants qw(:common REDIRECT HTTP_NO_CONTENT DIR_MAGIC_TYPE HTTP_NOT_MODIFIED);
 use Apache::MP3::L10N;
 use IO::File;
@@ -55,6 +61,7 @@ my %FORMAT_FIELDS = (
 
 my $NO  = '^(no|false)$';  # regular expression
 my $YES = '^(yes|true)$';  # regular expression
+
 
 sub handler ($$) {
   my $class = shift;
