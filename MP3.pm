@@ -87,9 +87,9 @@ sub new {
 
   $new->{'suffixes'} = [ qw(.ogg .OGG .wav .WAV .mp3 .MP3 .mpeg .MPEG)];
 
-  # if the search function is enabled, we want to pre-cache the tag info
+  # if the search function isn't disabled, we want to pre-cache the tag info
   # for searching.
-  if($new->r->dir_config('EnableSearch') && !$CACHED){
+  if( ( !$new->r->dir_config('DisableSearch') ) && !$CACHED){
 	
 	#this gets the system path of the Apache::MP3 root directory 'BaseDir'
     my $uri = $new->r->lookup_file($new->r->lookup_uri( $new->r->dir_config('BaseDir') )->filename)->filename;
@@ -103,7 +103,7 @@ sub new {
   return $new;
 }
 
-#this does all caching after the first request if EnableSearch is on
+#this does all caching after the first request if DisableSearch is off
 sub precache {
   my $self = shift;
   my $dirname = shift;
@@ -706,7 +706,7 @@ sub directory_top {
 
   print end_td;
 
-  if($self->r->dir_config('EnableSearch')){
+  if(!$self->r->dir_config('DisableSearch')){
 	print td($self->display_searchform('1'));
   }
 
@@ -723,7 +723,7 @@ sub display_searchform {
 
   my $form = "\n\n<!-- start searchform -->\n\n" . start_form(
 															  -name=>'search_form',
-															  -action=>$self->r->dir_config('BaseDir').'/?',
+															  -action=>$self->r->dir_config('BaseDir').'/search/?',
 															  -method=>'GET'
 															 );
   $form .= table(TR(td(font({-size=>-1},'<nobr>',
@@ -1831,7 +1831,7 @@ A B<demo version> can be browsed at http://www.modperl.com/Songs/.
 
 =head1 DESCRIPTION
 
-This module makes it possible to browse a directory hierarchy
+This module makes it possible to browse and search a directory hierarchy
 containing MP3, Ogg Vorbis, or Wav files, sort them on various
 fields, download them, stream them to an MP3 decoder like WinAmp, and
 construct playlists.  The display is configurable and subclassable.
@@ -1949,21 +1949,9 @@ contents.  The playlist syntax is as in this example:
   Length2=-1
   Version=2
 
-Likewise, if you place a list of shoutcast URLs into a file with the
-.pls extension, it will be treated as a playlist and displayed to the
-user with a distinctive icon.  Selecting the playlist icon will
-contact the shoutcast servers in the playlist and stream their
-contents.  The playlist syntax is as in this example:
-
-  [playlist]
-  numberofentries=2
-  File1=http://205.188.245.132:8038
-  Title1=Monkey Radio: Grooving. Sexy. Beats.
-  Length1=-1
-  File2=http://205.188.234.67:8052
-  Title2=SmoothJazz
-  Length2=-1
-  Version=2
+Example shoutcast files can be downloaded from http://www.shoutcast.com
+You can find a lot of good MP3 broadcasts there, most of them
+commercial-free.
 
 Apache::MP3 permits you to directly use CDDB data without embedding it
 in ID3 tags.  To take advantage of this feature, your MP3 files should
@@ -1976,7 +1964,32 @@ example, you might execute this command
 to create an INDEX file for the Mulholland Drive soundtrack.  The
 32-bit disc ID can be obtained with a program such as cd-discid.
 
-=item 7. Set up an information cache directory (optional)
+=item 7. Setting up the the MP3 search engine (optional)
+
+The search feature does a precache of the file information for your entire
+MP3 collection when you start the webserver.  For MP3 files, this
+includes the ID3 information, as well as any other information available.
+This may be possible for other filetypes as well.
+
+The precaching process server start means that it will take more time to
+start your webserver -- noticeably longer if you have many MP3 files.
+It also means that when you add new files under the 'BaseDir' directory,
+they will not be searchable until you restart the server.  Thems the
+breaks.
+
+By default, the MP3 search feature is enabled.  In order to disable it,
+add a configuration variable like the following to the Apache::MP3
+<Location> directive:
+
+ PerlSetVar  DisableSearch  1
+
+Currently Apache::MP3 searching is not configurable and is hard-coded
+to allow you to search for artists, song names, genres, and albums.
+The searchbox is also hard-coded to appear in the upper right corner
+of the page.  Contributions are welcome that will allow this feature
+to be customizable.
+
+=item 8. Set up an information cache directory (optional)
 
 In order to generate its MP3 listing, Apache::MP3 must open each sound
 file, extract its header information, and close it.  This is time
@@ -2531,6 +2544,9 @@ study it alongside a representative HTML page:
  -------------------------  page top --------------------------------
     page_top()
     directory_top()
+      display_searchform()
+
+    process_search() page_bottom() if(user search)
 
     <CDICON> <DIRECTORY> -> <DIRECTORY> -> <DIRECTORY>
     [Shuffle All] [Stream All]
