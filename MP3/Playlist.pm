@@ -33,8 +33,8 @@ sub process_playlist {
   if (my $cookies = CGI::Cookie->parse($r->header_in('Cookie'))) {
     my $playlist = $cookies->{playlist};
     @playlist = $playlist->value if $playlist;
-    if ($playlist[-1] && 
-	$r->lookup_uri($playlist[-1])->content_type ne 'audio/mpeg') {
+    if ($playlist[-1] &&
+	not $self->supported_type ($r->lookup_uri($playlist[-1])->content_type)) {
       $self->{possibly_truncated}++;
       pop @playlist;  # get rid of the last
     }
