@@ -103,7 +103,8 @@ sub new {
 	return if $self->cache_dir =~ m!/\.\./!;
 	return unless $self->cache_dir =~ m!^/.+$!;
 
-	unlink $self->cache_dir . '/search';
+	#should we do the unlink in perl.startup?
+	#unlink $self->cache_dir . '/search';
 	
 	$self->load_searchcache;
 	warn "done caching!" if DEBUG;#. $self->is_cached;
@@ -1289,6 +1290,8 @@ sub create_searchcache {
   return unless my $cache = $self->cache_dir;
   my $cache_file = $cache.'/search';
 
+  return if -e $cache_file;
+
   warn "precaching: $dirname" if DEBUG;
 
   opendir(D,$dirname);
@@ -1331,14 +1334,14 @@ sub load_searchcache {
 
   return if keys %SEARCH;
 
-  warn "load_searchcache" if DEBUG;
+  warn "load_searchcache" ;#if DEBUG;
 
   return unless my $cache = $self->cache_dir;
   my $cache_file = "$cache/search";
 
   #if the cache file doesn't exist, we need to create it
   unless(-e $cache_file){
-	warn "no cache file $cache_file, better create it" if DEBUG;
+	warn "no cache file $cache_file, better create it" ;#if DEBUG;
     my $basedir = $self->r->lookup_uri($self->r->dir_config('BaseDir'))->filename;
 	$self->create_searchcache($basedir,$basedir);
   }
@@ -2035,15 +2038,16 @@ add a configuration variable like the following to the Apache::MP3
 
  PerlSetVar  DisableSearch  1
 
-Search functionality depends on CacheDir being set, as the search data
-is cached to disk to enhance performance.  Make sure you turn on CacheDir
-(see item 8 below).
-
 Currently Apache::MP3 searching is not configurable and is hard-coded
 to allow you to search for artists, song names, genres, and albums.
 The searchbox is also hard-coded to appear in the upper right corner
 of the page.  Contributions are welcome that will allow this feature
 to be customizable.
+
+The search data resides in a disk cache.  I haven't figured out a good
+way to check if the file is stale (if media files have changed or moved,
+for instance).  I'd recommend unlinking the search file from your
+perl.startup file.  The search cache is at $CacheDir/search.
 
 =item 8. Set up an information cache directory (optional)
 
