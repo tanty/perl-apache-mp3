@@ -11,7 +11,7 @@ use File::Basename 'dirname','basename';
 use File::Path;
 use vars qw($VERSION);
 
-$VERSION = '3.00';
+$VERSION = '3.01';
 my $CRLF = "\015\012";
 
 # defaults:

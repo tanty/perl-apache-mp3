@@ -12,6 +12,7 @@ use CGI::Cookie;
 use Apache::MP3::Playlist;
 
 @ISA = 'Apache::MP3::Playlist';
+$VERSION = '1.10';
 
 use constant ENCODE => qq(lame --mp3input %b - <%f);
 my @PRESET_DEFAULTS = (
