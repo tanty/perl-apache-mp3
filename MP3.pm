@@ -18,7 +18,7 @@ use CGI::Carp 'fatalsToBrowser';
 
 use File::Basename 'dirname','basename';
 use File::Path;
-use vars qw($VERSION $CACHED %SEARCH);
+use vars qw($VERSION %SEARCH);
 
 $VERSION = '3.03';
 my $CRLF = "\015\012";
@@ -73,19 +73,19 @@ sub handler ($$) {
 sub new {
   my $class = shift;
   my $r = shift if @_ == 1;
-  my $new = bless {@_}, ref($class) || $class;
-  $new->{'r'} ||= $r if $r;
+  my $self = bless {@_}, ref($class) || $class;
+  $self->{'r'} ||= $r if $r;
 
   my @lang_tags;
   push @lang_tags,split /,\s+/,$r->header_in('Accept-language')
     if $r->header_in('Accept-language');
   push @lang_tags,$r->dir_config('DefaultLanguage') || 'en-US';
 
-  $new->{'lh'} ||=
+  $self->{'lh'} ||=
     Apache::MP3::L10N->get_handle(@lang_tags)
 	|| die "No language handle?";  # shouldn't ever happen!
 
-  $new->{'supported_types'} =
+  $self->{'supported_types'} =
     {
      # type                 condition                     handler method
      'audio/mpeg'        => eval "use MP3::Info; 1;"   && 'read_mpeg',
@@ -93,73 +93,25 @@ sub new {
      'audio/x-wav'       => eval "use Audio::Wav; 1;"  && 'read_wav'
     };
 
-  $new->{'suffixes'} = [ qw(.ogg .OGG .wav .WAV .mp3 .MP3 .mpeg .MPEG)];
+  $self->{'suffixes'} = [ qw(.ogg .OGG .wav .WAV .mp3 .MP3 .mpeg .MPEG)];
 
   # if the search function isn't disabled, we want to pre-cache the tag info
   # for searching.
-  if( ( !$new->r->dir_config('DisableSearch') ) && !$CACHED){
+  if( !$self->r->dir_config('DisableSearch') ){
+
+	return $self unless $self->cache_dir;
+	return if $self->cache_dir =~ m!/\.\./!;
+	return unless $self->cache_dir =~ m!^/.+$!;
+
+	unlink $self->cache_dir . '/search';
 	
-	#this gets the system path of the Apache::MP3 root directory 'BaseDir'
-	#it is very slow for large mp3 collections.  is there a better way to
-    #do this?
-    my $uri = $new->r->lookup_file($new->r->lookup_uri( $new->r->dir_config('BaseDir') )->filename)->filename;
-	$new->precache($uri,$uri);
-	$CACHED = 1;
-	warn "done caching!" ;#. $new->is_cached;
+	$self->load_searchcache;
+	warn "done caching!" if DEBUG;#. $self->is_cached;
   } else {
-	warn "already cached!";
+	warn "already cached!" if DEBUG;
   }
 
-  return $new;
-}
-
-#this does all caching after the first request if DisableSearch is off
-sub precache {
-  my $self = shift;
-  my $dirname = shift;
-  my $baseuri = shift;
-
-  warn "precaching: $dirname" if DEBUG;
-
-  opendir(D,$dirname);
-  my @dirents = readdir(D);
-  closedir(D);
-  foreach my $dirent (@dirents){
-
-	warn "A $dirname*$dirent" if DEBUG;
-	warn "recursing $dirname/$dirent" if -d "$dirname/$dirent" && DEBUG;
-
-	next if $dirent eq '.' or $dirent eq '..';
-	$self->precache("$dirname/$dirent",$baseuri) if -d "$dirname/$dirent";
-	next unless -f "$dirname/$dirent";
-
-	my $file = $self->r->lookup_file("$dirname/$dirent")->filename;
-	my $type = $self->r->lookup_file("$dirname/$dirent")->content_type;
-
-	warn "A" if DEBUG;
-	warn $file if DEBUG;
-	warn $self->r->filename if DEBUG;
-
-	next unless defined $file && defined $type;
-
-	warn "B" if DEBUG;
-
-    my $data = $self->fetch_info($file,$type);
-
-	# ok, this is sketchy.  we are substituting the value of
-	# BaseDir for $baseuri (the system path that corresponds
-    # to the apache path).  i haven't fully thought this out,
-	# it may cause problems with directory aliases below
-	# BaseDir, and with directory links... if you think you
-	# find a problem like this, notify the developers.
-	my $basedir = $self->r->dir_config('BaseDir');
-	my $searchdir = $dirname;
-	$searchdir =~ s/^$baseuri/$basedir/;
-
-	$SEARCH{"$searchdir/$dirent"} = $data if $data;
-
-	warn join " ", keys %SEARCH if DEBUG;
-  }
+  return $self;
 }
 
 sub x {  # maketext plus maybe escape.  The "x" for "xlate"
@@ -372,8 +324,6 @@ sub process_search {
     my $uri = dirname($self->r->uri);
     $uri =~ s!/?search/?!/!;
     $self->send_playlist([map { "$uri/$_" } keys %$RESULTS]);
-
-
 	
   } else { #HTML as default
 	$self->r->send_http_header( $self->html_content_type );
@@ -1296,8 +1246,6 @@ sub fetch_info {
   my $self = shift;
   my ($file,$type) = @_;
 
-  warn "0 $file $type" if DEBUG;
-
   return unless $self->supported_type ($type);
 
   warn "1 $file $type" if DEBUG;
@@ -1312,8 +1260,6 @@ sub fetch_info {
 
   my %data = $self->read_cache($file);
 
-  warn "2 $file $type" if DEBUG;
-
   unless (%data and keys(%data) == keys(%FORMAT_FIELDS)) {
     my $handler = $self->supported_type ($type);
     $self->$handler($file,\%data);
@@ -1323,7 +1269,6 @@ sub fetch_info {
     $self->write_cache($file => \%data);
   }
 
-  warn "3 $file $type" if DEBUG;
 
   if (my $blank = $self->missing_comment) {
     foreach (qw(artist duration genre album track)) {
@@ -1331,10 +1276,86 @@ sub fetch_info {
     }
   }
 
-  warn "4 $file $type" if DEBUG;
-
   $data{description} = $self->description(\%data);
   return \%data;
+}
+
+#this creates a disk cache
+sub create_searchcache {
+  my $self = shift;
+  my $dirname = shift;
+  my $baseuri = shift;
+
+  return unless my $cache = $self->cache_dir;
+  my $cache_file = $cache.'/search';
+
+  warn "precaching: $dirname" if DEBUG;
+
+  opendir(D,$dirname);
+  my @dirents = readdir(D);
+  closedir(D);
+  foreach my $dirent (@dirents){
+	next if $dirent eq '.' or $dirent eq '..';
+
+	warn "A $dirname*$dirent" if DEBUG;
+	warn "recursing $dirname/$dirent" if -d "$dirname/$dirent" && DEBUG;
+
+	$self->create_searchcache("$dirname/$dirent",$baseuri) if -d "$dirname/$dirent";
+	next unless -f "$dirname/$dirent";
+
+	my $file = $self->r->lookup_file("$dirname/$dirent")->filename;
+	my $type = $self->r->lookup_file("$dirname/$dirent")->content_type;
+
+	warn $file if DEBUG;
+	warn $self->r->filename if DEBUG;
+
+	next unless defined $file && defined $type;
+
+    my $data = $self->fetch_info($file,$type);
+
+	next unless $data;
+
+	my $cachedirname = dirname($cache_file);
+	-d $cachedirname || eval{mkpath($cachedirname)} || return;
+	if (my $c = IO::File->new(">>$cache_file")) {
+	  $data->{filepath} = $dirname;
+	  print $c join $;,%$data;
+	  print $c "\n";
+	}
+  }
+}
+
+# load search cache from disk into a hash
+sub load_searchcache {
+  my $self = shift;
+
+  return if keys %SEARCH;
+
+  warn "load_searchcache" if DEBUG;
+
+  return unless my $cache = $self->cache_dir;
+  my $cache_file = "$cache/search";
+
+  #if the cache file doesn't exist, we need to create it
+  unless(-e $cache_file){
+	warn "no cache file $cache_file, better create it" if DEBUG;
+    my $basedir = $self->r->lookup_uri($self->r->dir_config('BaseDir'))->filename;
+	$self->create_searchcache($basedir,$basedir);
+  }
+
+  return unless my $c = IO::File->new($cache_file);
+  my ($data,$buffer);
+  while (read($c,$buffer,5000)) {
+    $data .= $buffer;
+  }
+  close $c;
+
+  my @entries = split /\n/, $data;
+  foreach my $entry (@entries){
+	warn "parsing cache entries..." if DEBUG;
+	my %data = split $;,$entry;   # split into fields
+	$SEARCH{$data{filepath}.'/'.$data{filename}} = \%data;
+  }
 }
 
 # these methods are called to read the MIME types specified in
@@ -1495,6 +1516,7 @@ sub write_cache {
   if (my $c = IO::File->new(">$cache_file")) {
     print $c join $;,%$data;
   }
+
   1;
 }
 
@@ -2012,6 +2034,10 @@ add a configuration variable like the following to the Apache::MP3
 <Location> directive:
 
  PerlSetVar  DisableSearch  1
+
+Search functionality depends on CacheDir being set, as the search data
+is cached to disk to enhance performance.  Make sure you turn on CacheDir
+(see item 8 below).
 
 Currently Apache::MP3 searching is not configurable and is hard-coded
 to allow you to search for artists, song names, genres, and albums.
