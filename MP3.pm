@@ -306,6 +306,7 @@ sub run {
   if (param('Play Selected')) {
     return HTTP_NO_CONTENT unless my @files = param('file');
     my $uri = dirname($r->uri);
+    $uri =~ s!/?search/?!/!;
     $self->send_playlist([map { "$uri/$_" } @files]);
     return OK;
   }
@@ -516,8 +517,12 @@ sub stream_parms {
 sub find_mp3s {
   my $self = shift;
   my $recurse = shift;
+
+#changing this so that it is possible to find mp3s from search page
+#  my $uri = dirname($self->r->uri);
+  my $uri = dirname(shift);
+
   my $dir = dirname($self->r->filename);
-  my $uri = dirname($self->r->uri);
 
   my @uris = $self->sort_mp3s($self->_find_mp3s($dir,$recurse));
   foreach (@uris) {
@@ -1093,7 +1098,7 @@ sub mp3_list_top {
     start_table({-border=>0,-cellspacing=>0,-width=>'100%'}),"\n";
 
   print  TR(td(),
-	    td({$self->aleft,-colspan=>4},$self->control_buttons))
+	    td({$self->aleft,-colspan=>4},$self->control_buttons($mode)))
     if $self->stream_ok and keys %$mp3s > $self->file_list_is_long;
 
   $self->mp3_table_header;
@@ -1101,17 +1106,26 @@ sub mp3_list_top {
 
 sub control_buttons {
   my $self = shift;
-  return (
+  my $mode = shift;
+
+  my $return;
+
+  $return .= 
     sprintf('<input type="submit" name="Play Selected" value="%s" />',
       $self->x('Play Selected'),
-    ),	
+    );
+
+  $return .=
     sprintf('<input type="submit" name="Shuffle All" value="%s" />',
       $self->x('Shuffle All'),
-    ),
+    ) unless $mode eq 'search';
+
+  $return .=
     sprintf('<input type="submit" name="Play All" value="%s" />',
       $self->x('Play All'),
-    ),
-  );
+    ) unless $mode eq 'search';
+
+  return $return;
 }
 
 sub mp3_table_header {
@@ -1138,7 +1152,7 @@ sub mp3_list_bottom {
   my $mp3s = shift;  #hashref
   my $mode = shift;
   print  TR(td(),
-	    td({$self->aleft,-colspan=>10},$self->control_buttons))
+	    td({$self->aleft,-colspan=>10},$self->control_buttons($mode)))
     if $self->stream_ok;
   print end_table,"\n";
   print end_form;
@@ -1177,16 +1191,19 @@ sub format_song_controls {
 
   my $song_title = sprintf("%3d. %s", $count, $info->{title} || $song);
 
-  #this escaping is breaking mozilla! do we really need it here? -allen
   my $url = escape($song);
-  $url =~ s!\%2F!/!gi;
+  #escaping seems to be breaking mozilla...
   #my $url = $song;
+  #unescape slashes so directories work right with mozilla
+  $url =~ s!\%2F!/!gi;
 
   warn $mode if DEBUG;
 
   if($mode eq 'search'){
 	my $basedir = $self->r->dir_config('BaseDir');
 	$song =~ s!$basedir/!!;
+#	#remove "search/" substr from the url
+#	$song =~ s!$mode/!!;
 	warn $basedir if DEBUG;
 	warn $song if DEBUG;
 	warn $self->r->uri if DEBUG;
