@@ -10,7 +10,7 @@ use File::Basename 'dirname','basename';
 use File::Path;
 use vars qw($VERSION);
 
-$VERSION = '2.22';
+$VERSION = '2.23';
 my $CRLF = "\015\012";
 
 # defaults:
@@ -1211,11 +1211,8 @@ sub stream_base {
     }
   }
 
-  my $vhost = $r->hostname;
-  unless ($vhost) {
-    $vhost = $r->server->server_hostname;
-    $vhost .= ':' . $r->get_server_port unless $r->get_server_port == 80;
-  }
+  my $vhost = $r->hostname || $r->server->server_hostname;
+  $vhost .= ':' . $r->get_server_port unless $r->get_server_port == 80;
   $basename = "http://${auth_info}${vhost}";
   return $basename;
 }

@@ -128,7 +128,7 @@ sub open_file {
               {$1 eq 'b' ? $presets         :
                $1 eq 'f' ? quotemeta($file) :
                "%$1"}exg;
-  my $filter = $self->r->dir_config('VerboseMP3Encoder') 
+  my $filter = $self->r->dir_config('VerboseMP3Encoder')
     ? "$encode |" : "$encode 2>/dev/null |";
   return IO::File->new($filter);
 }
@@ -199,6 +199,12 @@ to be streamed.
 If not present, the following default is used:
 
   lame --mp3input %b - <%f
+
+Some people have reported problems relating to the Apache server's
+path not finding /usr/local/bin/lame.  If this affects you, try the
+following configuration:
+
+ PerlSetVar  MP3Encoder "/usr/local/bin/lame --mp3input %b - <%f"
 
 =item ResamplePresets
 
