@@ -21,7 +21,7 @@ use File::Basename 'dirname','basename','fileparse';
 use File::Path;
 use vars qw($VERSION %SEARCH);
 
-$VERSION = '3.05';
+$VERSION = '3.06';
 my $CRLF = "\015\012";
 
 use constant DIR_MAGIC_TYPE => 'httpd/unix-directory';
@@ -495,10 +495,94 @@ sub stream {
     return FORBIDDEN;
   }
 
-  my $icy = MP3::Icecast->new;
-  $icy->stream($r->filename,0,$r);
+  # need to send the stream manually if the stream_timeout is set
+  if ($self->stream_timeout) {
+    return $self->send_stream_manually($r->filename,$r->uri);
+  } else {
+    my $icy = MP3::Icecast->new;
+    $icy->stream($r->filename,0,$r);
+    return OK;
+  }
+}
+
+# stream an MP3 file
+sub send_stream_manually {
+  my $self = shift;
+  my ($file,$url) = @_;
+  my $r = $self->r;
+
+  my $mime = $r->content_type;
+  my $info = $self->fetch_info($file,$mime);
+  return DECLINED unless $info;  # not a legit mp3 file?
+  my $fh = $self->open_file($file) || return DECLINED;
+  binmode($fh);  # to prevent DOS text-mode foolishness
+
+  my $size = -s $file;
+  my $bitrate = $info->{bitrate};
+  if ($self->can('bitrate') && $self->bitrate) {
+    ($bitrate = $self->bitrate) =~ s/ kbps//i;
+    # quick approximation
+    $size = int($size * ($bitrate / $info->{bitrate}));
+  }
+  my $description = $info->{description};
+  my $genre       = $info->{genre} || $self->lh->maketext('unknown');
+
+  my $range = 0;
+  $r->header_in("Range")
+    and $r->header_in("Range") =~ m/bytes=(\d+)/
+    and $range = $1
+    and seek($fh,$range,0);
+
+  # Look for a descriptive file that has the same base as the mp3 file.
+  # Also look for various index files.
+  my $icyurl = $self->stream_base(1);
+  my $base   = basename($file);
+  $base =~ s/\.\w+$//;  # get rid of suffix
+  my $dirbase  = dirname($file);
+  my $urlbase  = dirname($url);
+  foreach ("$base.html","$base.htm","index.html","index.htm") {
+    my $file = "$dirbase/$_";
+    if (-r $file) {
+      $icyurl .= "$urlbase/$_";
+      last;
+    }
+  }
+
+  $r->print("ICY ". ($range ? 206 : 200) ." OK$CRLF");
+  $r->print("icy-notice1:<BR>This stream requires a shoutcast/icecast compatible player.<BR>$CRLF");
+  $r->print("icy-notice2:Namp! (Apache::MP3)<BR>$CRLF");
+  $r->print("icy-name:$description$CRLF");
+  $r->print("icy-genre:$genre$CRLF");
+  $r->print("icy-url: $icyurl$CRLF");
+  $r->print("icy-pub:1$CRLF");
+  $r->print("icy-br:$bitrate$CRLF");
+  $r->print("Accept-Ranges: bytes$CRLF");
+  $r->print("Content-Range: bytes $range-" . ($size-1) . "/$size$CRLF")
+    if $range;
+  $r->print("Content-Length: $size$CRLF");
+  $r->print("Content-Type: $mime$CRLF");
+  $r->print("$CRLF");
+  return OK if $r->header_only;
+
+  if (my $timeout = $self->stream_timeout) {
+    my $seconds  = $info->{seconds};
+    $seconds ||= 60;  # shouldn't happen
+    my $fraction = $timeout/$seconds;
+    my $bytes    = int($fraction * $size);
+    while ($bytes > 0) {
+      my $data;
+      my $b = read($fh,$data,2048) || last;
+      $bytes -= $b;
+      $r->print($data);
+    }
+    return OK;
+  }
+
+  # we get here for untimed transmits
+  $r->send_fd($fh);
   return OK;
 }
+
 
 # this generates a playlist for the MP3 player
 sub send_playlist {
