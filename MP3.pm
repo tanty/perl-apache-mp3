@@ -815,7 +815,6 @@ sub subdir_list {
   my $cols = $self->subdir_columns;
   my $rows =  int(0.99 + @subdirs/$cols);
 
-#  print start_center;
   print start_table({-border=>0,-id=>'diroutertable'}),"\n";
 
   if($self->subdir_columns == 1){
@@ -833,7 +832,6 @@ sub subdir_list {
 			);
   }
 
-#  my $i = 0; #index of subdir to render
   for (my $row=0; $row < $rows; $row++) {
     print start_TR({-valign=>'BOTTOM' -align=>'LEFT'});
     for (my $col=0; $col<$cols; $col++) {
@@ -843,12 +841,10 @@ sub subdir_list {
       #only assume wrap in td() if multiple columns.  should td() be moved to format_subdir() ?
       print $self->subdir_columns == 1 ? $contents : td($contents);
 
-#      $i++;
     }
     print end_TR,"\n";
   }
   print end_table;
-#  print end_center;
 }
 
 # given a list of CD directories, sort them
