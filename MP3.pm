@@ -1223,7 +1223,7 @@ sub stream_base {
     }
   }
 
-  if (my $basename = $r->dir_config('StreamBase')) {
+  if ((my $basename = $r->dir_config('StreamBase')) && !$self->is_localnet()) {
     $basename =~ s!http://!http://$auth_info! if $auth_info;
     return $basename;
   }
@@ -1254,6 +1254,21 @@ sub is_local {
   my ($serverport,$serveraddr) = sockaddr_in($r->connection->local_addr);
   my ($remoteport,$remoteaddr) = sockaddr_in($r->connection->remote_addr);
   return $serveraddr eq $remoteaddr;
+}
+
+# Check if the requesting client is on the local network, as defined by
+# the LocalNet directive
+sub is_localnet {
+  my $self = shift;
+  return 1 if $self->is_local;  # d'uh
+  my @local = split /\s+/,$self->r->dir_config('LocalNet') or return;
+
+  my $remote_ip = $self->r->connection->remote_ip . '.';
+  foreach (@local) {
+    $_ .= '.' unless /\.$/;
+    return 1 if index($remote_ip,$_) == 0;
+  }
+  return;
 }
 
 1;
@@ -1509,11 +1524,12 @@ Table 1: Configuration Variables
  ReadMP3Info	       yes|no		yes
  StreamTimeout         integer          0
 
- DIRECTORY OPTOINS
+ DIRECTORY OPTIONS
  BaseDir	       URL		/apache_mp3
  CacheDir              path             -none-
  HelpURL               URL              apache_mp3_help.gif:614x498
  StreamBase            URL              -none-
+ LocalNet              subnet           -none-
 
  DISPLAY OPTIONS
  ArrowIcon	       URL		right_arrow.gif
@@ -1632,9 +1648,8 @@ would like.  Volunteers to make a better help page are welcomed!
 
 A URL to use as the base for streaming.  The default is to use the
 same host for both directory listings and streaming.  This may be of
-use for transparent reverse proxies or for situations in which you
-want one server to generate the index, and the other to service the
-stream requests.
+use when running behind a firewall and the web server can't figure out
+the correct address for the playlist automatically.
 
 Example:
 
@@ -1648,6 +1663,24 @@ placed in the playlist will be
 The path part of the URL is simply appended to StreamBase.  If you
 want to do more sophisticated URL processing, use I<mod_rewrite> or
 equivalent.
+
+=item LocalNet I<URL>
+
+This configuration variable is used in conjunction with B<StreamBase>
+to disable B<StreamBase> for clients on the local network.  This is
+needed for firewall configurations in which the web server is accessed
+by one address & port by hosts behind the firewall, and by another
+address & port by hosts outside the firewall.
+
+The argument is a dotted subnet address, or a space-delimited list of
+subnets.  For example:
+
+  PerlSetVar LocalNet "192.168.1 192.168.2 127.0.0.1"
+
+Address matching is done by matching the address from left to right,
+with an implied dot added to the end of the subnet address.  More
+complex subnet matching using netmasks is desirable, but not
+implemented.
 
 =back
 
