@@ -1334,14 +1334,14 @@ sub load_searchcache {
 
   return if keys %SEARCH;
 
-  warn "load_searchcache" ;#if DEBUG;
+  warn "load_searchcache" if DEBUG;
 
   return unless my $cache = $self->cache_dir;
   my $cache_file = "$cache/search";
 
   #if the cache file doesn't exist, we need to create it
   unless(-e $cache_file){
-	warn "no cache file $cache_file, better create it" ;#if DEBUG;
+	warn "no cache file $cache_file, better create it" if DEBUG;
     my $basedir = $self->r->lookup_uri($self->r->dir_config('BaseDir'))->filename;
 	$self->create_searchcache($basedir,$basedir);
   }
