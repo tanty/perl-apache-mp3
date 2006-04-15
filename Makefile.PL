@@ -6,7 +6,7 @@ WriteMakefile(
     AUTHOR              => 'Lincoln Stein <lstein@cshl.org>',
     ABSTRACT            => 'mod_perl class for generating browsable MP3 directory lists',
     ABSTRACT_FROM       => 'MP3.pm',
-    VERSION             => '3.99',
+    VERSION             => '4.00',
     PREREQ_PM		=> {
 			    MP3::Info             => 0.8,
 			    Apache2::RequestRec   => 2.000001,
