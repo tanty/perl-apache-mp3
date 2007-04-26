@@ -1,3 +1,5 @@
+4.01
+	-Playlists sorted alphabetically.
 4.00
 	-Now works *only* with Apache2/mod_perl2.
 	-Removed searching functionality -- was not stable.

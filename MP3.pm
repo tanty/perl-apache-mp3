@@ -593,6 +593,8 @@ sub directory_top {
     $links = $self->generate_navpath_arrows($title);
   } elsif ($self->path_style eq 'slashes') {
     $links = $self->generate_navpath_slashes($title);
+  } else {
+    $links = $self->generate_navpath_slashes($title);
   }
 
   print a({-href=>'./playlist.m3u?Play+All+Recursive=1'},
@@ -1021,6 +1023,7 @@ sub list_subdirs {
 sub list_playlists {
   my $self = shift;
   my $playlists = shift; # arrayref
+  @{$playlists} = sort @{$playlists};
   $self->playlist_list_top($playlists);
   $self->playlist_list($playlists);
   $self->playlist_list_bottom($playlists);
