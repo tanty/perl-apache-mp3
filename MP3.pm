@@ -1937,9 +1937,10 @@ A B<demo version> can be browsed at http://www.modperl.com/Songs/.
 =head1 DESCRIPTION
 
 This module makes it possible to browse a directory hierarchy
-containing MP3, Ogg Vorbis, or Wav files, sort them on various
-fields, download them, stream them to an MP3 decoder like WinAmp, and
-construct playlists.  The display is configurable and subclassable.
+containing MP3, MP4, Ogg Vorbis, or Wav audio files, sort them on
+various fields, download them, stream them to an MP3 decoder like
+WinAmp, and construct playlists.  The display is configurable and
+subclassable.
 
 NOTE: This version of Apache::MP3 is substantially different from
 the pre-2.0 version described in The Perl Journal.  Specifically, the
@@ -1953,13 +1954,13 @@ This section describes the installation process.
 
 =item 1. Prequisites
 
-This module requires mod_perl, MP3::Info (to stream MP3 files),
-Ogg::Vorbis (to stream OggVorbis files), and Audio::Wav (for Wave
-files) all of which are available on CPAN.
+This module only requires Apache2's mod_perl, Locale::Maketext and
+CGI::Session.
 
 The module will automatically adjust for the absence of one or more of
-the MP3::Info, Ogg::Vorbis or Audio::Wav modules by inhibiting the
-display of the corresponding file type.
+the MP3::Info, MP4::Info, Ogg::Vorbis/Ogg::Vorbis::Header::PurePerl or
+Audio::Wav modules by inhibiting the display of the corresponding file
+type.
 
 =item 2. Configure MIME types
 
