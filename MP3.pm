@@ -1489,7 +1489,7 @@ sub read_vorbis_ogg {
     my $self = shift;
     my ($file,$data) = @_;
 
-    my $ogg = Ogg::Vorbis::Header::PurePerl->load($file) or return;
+    my $ogg = Ogg::Vorbis::Header::PurePerl->new($file) or return;
     my $comments = $ogg->$_comments;
     my $info = $ogg->info;
     my $sec = int $info->{length};
