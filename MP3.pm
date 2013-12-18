@@ -1932,8 +1932,6 @@ Apache::MP3 - Generate streamable directories of MP3 and Ogg Vorbis files
   PerlHandler Apache::MP3::Playlist
  </Location>
 
-A B<demo version> can be browsed at http://www.modperl.com/Songs/.
-
 =head1 DESCRIPTION
 
 This module makes it possible to browse a directory hierarchy

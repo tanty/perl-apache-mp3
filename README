@@ -14,9 +14,6 @@ download an MP3 file to disk by clicking on its title, stream it to an MP3
 decoder by clicking on the "play" link. Users can also stream the entire
 contents of a directory, or select a subset of songs to play.
 
-A DEMO is available at http://www.modperl.com/Songs.  In this demo, stream
-time is limited to 30 seconds in order to avoid copyright infringement.
-
 See the "screenshots" directory for some pictures of Apache::MP3 in action.
 
 See below for CHANGES.
