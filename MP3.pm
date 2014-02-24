@@ -94,14 +94,23 @@ sub new {
      # type                 condition                     handler method
      'audio/mpeg'        => eval "use MP3::Info; 1;"   && 'read_mpeg',
      'audio/mpeg4'       => eval "use MP4::Info; 1;"   && 'read_mpeg4',
+     'audio/mp4a-latm'   => eval "use MP4::Info; 1;"   && 'read_mpeg4',
+     'audio/x-m4a'       => eval "use MP4::Info; 1;"   && 'read_mpeg4',
+     'audio/aac'         => eval "use MP4::Info; 1;"   && 'read_mpeg4',
+     'application/ogg'   => eval "use Ogg::Vorbis; 1;" && 'read_vorbis_ogg' ||
+                            eval "use Ogg::Vorbis::Header::PurePerl; 1;" 
+                                                       && 'read_vorbis_hp',
      'application/x-ogg' => eval "use Ogg::Vorbis; 1;" && 'read_vorbis_ogg' ||
+                            eval "use Ogg::Vorbis::Header::PurePerl; 1;" 
+                                                       && 'read_vorbis_hp',
+     'audio/ogg'         => eval "use Ogg::Vorbis; 1;" && 'read_vorbis_ogg' ||
                             eval "use Ogg::Vorbis::Header::PurePerl; 1;" 
                                                        && 'read_vorbis_hp',
      'audio/x-wav'       => eval "use Audio::Wav; 1;"  && 'read_wav'
     };
 
 
-  $self->{'suffixes'} = [ qw(.ogg .OGG .wav .WAV .mp3 .MP3 .mpeg .MPEG .m4a .mp4 .m4p)];
+  $self->{'suffixes'} = [ qw(.ogg .OGG .oga .OGA .wav .WAV .mp3 .MP3 .mpeg .MPEG .m4a .mp4 .m4p)];
 
   return $self;
 }
